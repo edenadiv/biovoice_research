@@ -1,0 +1,31 @@
+{
+  "source_run_directory": "outputs/runs/20260405_200907_fusion_plus_interpretable_features",
+  "experiment_name": "fusion_plus_interpretable_features",
+  "dataset_mode": "asvspoof2021_la",
+  "dataset_name": "ASVspoof2021_LA",
+  "timestamp": "20260405_200907",
+  "evidence_type": "real-data baseline evidence",
+  "copied_files": [
+    "artifacts/latest_run/supervisor_report.md",
+    "artifacts/latest_run/metrics.json",
+    "artifacts/latest_run/dataset_review.json",
+    "artifacts/latest_run/metric_summary.csv",
+    "artifacts/latest_run/predictions_head.csv",
+    "artifacts/latest_run/plot_inventory.md",
+    "artifacts/latest_run/README.md"
+  ],
+  "omitted_files": [
+    "outputs/runs/20260405_200907_fusion_plus_interpretable_features/tables/predictions.csv"
+  ],
+  "predictions_preview": {
+    "preview_file": "artifacts/latest_run/predictions_head.csv",
+    "preview_rows_including_header": 201,
+    "original_rows_including_header": 162993,
+    "original_size_bytes_approx": 53000000
+  },
+  "notes": [
+    "This is a curated GitHub-tracked review bundle, not the full experiment storage.",
+    "Large binaries, checkpoints, and full plot directories remain under the ignored outputs tree.",
+    "Repository-facing copies were lightly normalized to remove machine-local absolute paths."
+  ]
+}

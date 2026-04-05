@@ -138,6 +138,11 @@ The polished run layout now also includes:
 
 Runs live under `outputs/runs/<timestamp>_<experiment>/`.
 
+## Latest Review Artifacts
+For GitHub review, the repository tracks a small curated artifact bundle under [artifacts/latest_run](artifacts/latest_run/). This folder contains the latest supervisor-facing text and tabular evidence from the most recent meaningful run, while the full local run bundle still lives under the ignored `outputs/` tree.
+
+Use the tracked artifact bundle when you want a quick GitHub-readable view of the latest baseline evidence. Use `outputs/runs/<timestamp>_<experiment>/` locally when you need the full plots, checkpoints, notebooks, and complete prediction tables.
+
 ## How Supervisors Should Read A Run
 1. Open `reports/supervisor_report.md` first for the high-level verdict.
 2. Open `reports/plot_inventory.md` next so each figure is paired with an interpretation note.

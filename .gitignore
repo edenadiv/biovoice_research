@@ -8,6 +8,8 @@
 .matplotlib/
 __pycache__/
 *.egg-info/
+# Full experiment outputs stay local and ignored.
+# Curated small-text review artifacts under artifacts/latest_run/ are tracked on purpose.
 outputs/runs/
 outputs/figures/
 outputs/tables/

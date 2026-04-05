@@ -1,0 +1,28 @@
+{
+  "dataset_mode": "asvspoof2021_la",
+  "dataset_name": "ASVspoof2021_LA",
+  "manifest_output_dir": "external_data/asvspoof/staged_manifests",
+  "split_strategy": "official_protocol",
+  "require_speaker_disjoint": true,
+  "enrollment_count": 3,
+  "num_utterances": 121461,
+  "num_trials": 162992,
+  "num_speakers": 107,
+  "speakers_per_split": {
+    "enroll": 67,
+    "train": 20,
+    "val": 20
+  },
+  "trials_per_split": {
+    "test": 162992
+  },
+  "trial_labels": {
+    "spoof": 133360,
+    "target_bona_fide": 14816,
+    "wrong_speaker": 14816
+  },
+  "speaker_disjoint_violations": 0,
+  "trial_leakage_violations": 0,
+  "mean_duration_seconds": 3.249935587863594,
+  "mean_speech_ratio": 0.4827874761670828
+}
