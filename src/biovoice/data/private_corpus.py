@@ -7,9 +7,11 @@ making leakage assumptions explicit and auditable.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from biovoice.data.manifests import save_manifest, save_split_manifests, validate_trial_manifest, validate_utterance_manifest
@@ -19,7 +21,7 @@ from biovoice.data.quality_checks import (
     speaker_split_report,
     summarize_audio_quality,
 )
-from biovoice.utils.audio_io import load_audio
+from biovoice.utils.audio_io import inspect_audio_metadata, load_audio
 from biovoice.utils.path_utils import resolve_path
 from biovoice.utils.serialization import save_frame, save_json
 
@@ -38,6 +40,13 @@ def _load_table(path: str | Path) -> pd.DataFrame:
     if source.suffix.lower() == ".json":
         return pd.read_json(source)
     return pd.read_csv(source)
+
+
+def _stable_rank(*parts: object, seed: int) -> int:
+    """Create a deterministic ordering key independent of filesystem ordering."""
+    payload = "|".join(str(part) for part in parts)
+    digest = hashlib.blake2b(f"{seed}|{payload}".encode("utf-8"), digest_size=8).hexdigest()
+    return int(digest, 16)
 
 
 def _normalize_spoof_label(value: Any) -> int:
@@ -114,9 +123,75 @@ def _assign_splits(frame: pd.DataFrame, data_cfg: dict[str, Any]) -> tuple[pd.Da
     return assigned, False
 
 
-def _quality_frame(frame: pd.DataFrame, speech_threshold: float) -> pd.DataFrame:
-    """Compute audio quality summaries used for filtering and review artifacts."""
+def _sample_quality_subset(frame: pd.DataFrame, sample_size: int, seed: int) -> pd.DataFrame:
+    """Choose a deterministic audit subset for costly waveform quality scans."""
+    if sample_size <= 0 or sample_size >= len(frame):
+        return frame.copy()
+    group_columns = [column for column in ["split", "spoof_label"] if column in frame.columns]
+    if not group_columns:
+        group_columns = ["spoof_label"]
+    grouped = frame.groupby(group_columns, dropna=False)
+    sampled_parts: list[pd.DataFrame] = []
+    for _, part in grouped:
+        proportional = max(1, int(round(len(part) / len(frame) * sample_size)))
+        sampled_parts.append(part.sample(n=min(len(part), proportional), random_state=seed))
+    sampled = pd.concat(sampled_parts, ignore_index=True).drop_duplicates(subset=["utterance_id"])
+    if len(sampled) > sample_size:
+        sampled = sampled.sample(n=sample_size, random_state=seed)
+    return sampled.reset_index(drop=True)
+
+
+def _quality_frame(
+    frame: pd.DataFrame,
+    speech_threshold: float,
+    *,
+    scan_mode: str,
+    waveform_sample_size: int,
+    seed: int,
+) -> pd.DataFrame:
+    """Compute scalable quality summaries used for filtering and review artifacts."""
+    scan_mode = str(scan_mode).lower()
     rows: list[dict[str, Any]] = []
+    waveform_subset = frame
+    if scan_mode == "header_only":
+        waveform_subset = frame.iloc[0:0]
+    elif scan_mode == "header_plus_sample":
+        waveform_subset = _sample_quality_subset(frame, waveform_sample_size, seed)
+    elif scan_mode != "full":
+        raise ValueError(
+            "Unsupported quality_scan_mode. Expected one of "
+            "'full', 'header_only', or 'header_plus_sample'."
+        )
+
+    waveform_ids = set(waveform_subset["utterance_id"].tolist())
+    if scan_mode != "full":
+        for _, row in frame.iterrows():
+            metadata = inspect_audio_metadata(row["path"])
+            duration_seconds = float(metadata["num_frames"] / max(metadata["sample_rate"], 1))
+            rows.append(
+                {
+                    "utterance_id": row["utterance_id"],
+                    "speaker_id": row["speaker_id"],
+                    "path": row["path"],
+                    "source_recording_id": row["source_recording_id"],
+                    "spoof_label": row["spoof_label"],
+                    "duration_seconds": duration_seconds,
+                    "speech_ratio": np.nan,
+                    "sample_rate": int(metadata["sample_rate"]),
+                    "clipping_ratio": np.nan,
+                    "peak_amplitude": np.nan,
+                    "rms": np.nan,
+                    "snr_proxy_db": np.nan,
+                    "quality_measurement": "waveform" if row["utterance_id"] in waveform_ids else "header_only",
+                }
+            )
+        rows_by_id = {str(item["utterance_id"]): item for item in rows}
+        for _, row in waveform_subset.iterrows():
+            waveform, sample_rate = load_audio(row["path"])
+            summary = summarize_audio_quality(waveform, sample_rate, threshold=speech_threshold)
+            rows_by_id[str(row["utterance_id"])].update(summary.to_dict())
+        return pd.DataFrame(rows)
+
     for _, row in frame.iterrows():
         waveform, sample_rate = load_audio(row["path"])
         summary = summarize_audio_quality(waveform, sample_rate, threshold=speech_threshold)
@@ -128,6 +203,7 @@ def _quality_frame(frame: pd.DataFrame, speech_threshold: float) -> pd.DataFrame
                 "source_recording_id": row["source_recording_id"],
                 "spoof_label": row["spoof_label"],
                 **summary.to_dict(),
+                "quality_measurement": "waveform",
             }
         )
     return pd.DataFrame(rows)
@@ -154,11 +230,135 @@ def _filter_by_quality(
     return filtered, merged
 
 
+def _rank_frame(frame: pd.DataFrame, seed: int, *context: object) -> pd.DataFrame:
+    """Attach a stable pseudo-random order to reduce file-order bias."""
+    ranked = frame.copy()
+    ranked["_selection_rank"] = ranked.apply(
+        lambda row: _stable_rank(
+            *context,
+            row["speaker_id"],
+            row["source_recording_id"],
+            row["utterance_id"],
+            seed=seed,
+        ),
+        axis=1,
+    )
+    return ranked.sort_values(["_selection_rank", "source_recording_id", "utterance_id"]).reset_index(drop=True)
+
+
+def _select_enrollment_rows(
+    bona: pd.DataFrame,
+    enrollment_count: int,
+    seed: int,
+    split: str,
+    speaker_id: str,
+) -> pd.DataFrame:
+    """Choose deterministic enrollment utterances with less file-order bias.
+
+    Old behavior selected the first files in sorted order, which could bias the
+    enrollment pool toward a particular recording or naming pattern. The new
+    policy uses a seed-stable ranking and prefers one utterance per
+    ``source_recording_id`` before reusing additional recordings.
+    """
+    ranked = _rank_frame(bona, seed, "enrollment", split, speaker_id)
+    chosen_indices: list[int] = []
+    for _, group in ranked.groupby("source_recording_id", sort=False):
+        chosen_indices.append(int(group.index[0]))
+        if len(chosen_indices) == enrollment_count:
+            break
+    if len(chosen_indices) < enrollment_count:
+        for index in ranked.index:
+            if int(index) not in chosen_indices:
+                chosen_indices.append(int(index))
+            if len(chosen_indices) == enrollment_count:
+                break
+    return ranked.loc[chosen_indices].sort_values("_selection_rank").drop(columns="_selection_rank")
+
+
+def _select_probe_rows(
+    frame: pd.DataFrame,
+    *,
+    seed: int,
+    split: str,
+    speaker_id: str,
+    role: str,
+    limit: int | None,
+) -> pd.DataFrame:
+    """Pick deterministic probe candidates without inheriting filename order."""
+    ranked = _rank_frame(frame, seed, role, split, speaker_id)
+    if limit is None:
+        return ranked.drop(columns="_selection_rank")
+    return ranked.head(limit).drop(columns="_selection_rank")
+
+
+def _select_wrong_speaker_rows(
+    split_frame: pd.DataFrame,
+    *,
+    claimed_speaker_id: str,
+    enrollment_sources: set[str],
+    split: str,
+    seed: int,
+    count: int,
+    strategy: str,
+) -> pd.DataFrame:
+    """Build deterministic, leakage-safe wrong-speaker probes for one claim."""
+    eligible = split_frame[
+        (split_frame["speaker_id"] != claimed_speaker_id)
+        & (split_frame["spoof_label"] == 0)
+        & (~split_frame["source_recording_id"].isin(enrollment_sources))
+    ].copy()
+    if eligible.empty or count <= 0:
+        return eligible.iloc[0:0]
+
+    strategy = str(strategy).lower()
+    if strategy == "seeded_shuffle":
+        return _rank_frame(eligible, seed, "wrong-speaker", split, claimed_speaker_id).head(count).drop(columns="_selection_rank")
+    if strategy != "round_robin":
+        raise ValueError("Unsupported impostor_sampling_strategy. Expected 'round_robin' or 'seeded_shuffle'.")
+
+    other_speakers = sorted(eligible["speaker_id"].astype(str).unique())
+    speaker_order = sorted(
+        other_speakers,
+        key=lambda speaker: _stable_rank("wrong-speaker-speaker", split, claimed_speaker_id, speaker, seed=seed),
+    )
+    selected_parts: list[pd.DataFrame] = []
+    per_speaker_ranked = {
+        speaker: _rank_frame(
+            eligible[eligible["speaker_id"] == speaker].copy(),
+            seed,
+            "wrong-speaker-probe",
+            split,
+            claimed_speaker_id,
+            speaker,
+        ).reset_index(drop=True)
+        for speaker in speaker_order
+    }
+    cursor = 0
+    while len(selected_parts) < count:
+        progress = False
+        for speaker in speaker_order:
+            ranked = per_speaker_ranked[speaker]
+            if cursor < len(ranked):
+                selected_parts.append(ranked.iloc[[cursor]])
+                progress = True
+                if len(selected_parts) == count:
+                    break
+        if not progress:
+            break
+        cursor += 1
+    if not selected_parts:
+        return eligible.iloc[0:0]
+    return pd.concat(selected_parts, ignore_index=True).drop(columns="_selection_rank")
+
+
 def _build_trial_manifest(utterances: pd.DataFrame, data_cfg: dict[str, Any]) -> pd.DataFrame:
     """Construct leakage-safe enrollment-conditioned trials from utterances."""
     enrollment_count = int(data_cfg["enrollment_count"])
     probe_limit = data_cfg.get("probe_trials_per_speaker")
     probe_limit = None if probe_limit in {None, "", 0} else int(probe_limit)
+    wrong_speaker_trials = int(data_cfg.get("wrong_speaker_trials_per_speaker", 1))
+    impostor_strategy = str(data_cfg.get("impostor_sampling_strategy", "round_robin"))
+    seed = int(data_cfg.get("seed", 42))
     rows: list[dict[str, Any]] = []
     trial_counter = 0
 
@@ -170,24 +370,43 @@ def _build_trial_manifest(utterances: pd.DataFrame, data_cfg: dict[str, Any]) ->
             )
         for speaker_index, speaker_id in enumerate(speakers):
             speaker_frame = split_frame[split_frame["speaker_id"] == speaker_id].copy()
-            bona = speaker_frame[speaker_frame["spoof_label"] == 0].sort_values(
-                ["source_recording_id", "utterance_id"]
-            )
-            spoof = speaker_frame[speaker_frame["spoof_label"] == 1].sort_values(
-                ["source_recording_id", "utterance_id"]
-            )
+            bona = speaker_frame[speaker_frame["spoof_label"] == 0].copy()
+            spoof = speaker_frame[speaker_frame["spoof_label"] == 1].copy()
             if len(bona) < enrollment_count + 1:
                 raise ValueError(
                     f"Speaker {speaker_id} in split {split} needs at least "
                     f"{enrollment_count + 1} bona fide utterances."
                 )
-            enrollment = bona.iloc[:enrollment_count]
-            target_candidates = bona.iloc[enrollment_count:]
-            if probe_limit is not None:
-                target_candidates = target_candidates.head(probe_limit)
-                spoof = spoof.head(probe_limit)
+            enrollment = _select_enrollment_rows(
+                bona,
+                enrollment_count=enrollment_count,
+                seed=seed,
+                split=str(split),
+                speaker_id=str(speaker_id),
+            )
+            remaining_bona = bona.loc[~bona["utterance_id"].isin(set(enrollment["utterance_id"]))].copy()
+            target_candidates = _select_probe_rows(
+                remaining_bona,
+                seed=seed,
+                split=str(split),
+                speaker_id=str(speaker_id),
+                role="target_probe",
+                limit=probe_limit,
+            )
+            spoof_candidates = _select_probe_rows(
+                spoof,
+                seed=seed,
+                split=str(split),
+                speaker_id=str(speaker_id),
+                role="spoof_probe",
+                limit=probe_limit,
+            )
             enrollment_paths = enrollment["path"].tolist()
             enrollment_sources = enrollment["source_recording_id"].astype(str).tolist()
+            enrollment_source_set = set(enrollment_sources)
+            target_candidates = target_candidates[
+                ~target_candidates["source_recording_id"].astype(str).isin(enrollment_source_set)
+            ].reset_index(drop=True)
 
             for _, probe in target_candidates.iterrows():
                 rows.append(
@@ -207,8 +426,8 @@ def _build_trial_manifest(utterances: pd.DataFrame, data_cfg: dict[str, Any]) ->
                 )
                 trial_counter += 1
 
-            for _, probe in spoof.iterrows():
-                if str(probe["source_recording_id"]) in enrollment_sources:
+            for _, probe in spoof_candidates.iterrows():
+                if str(probe["source_recording_id"]) in enrollment_source_set:
                     continue
                 rows.append(
                     {
@@ -227,17 +446,16 @@ def _build_trial_manifest(utterances: pd.DataFrame, data_cfg: dict[str, Any]) ->
                 )
                 trial_counter += 1
 
-            imposter_candidates = []
-            for offset in range(1, len(speakers)):
-                imposter_speaker = speakers[(speaker_index + offset) % len(speakers)]
-                candidate_frame = split_frame[
-                    (split_frame["speaker_id"] == imposter_speaker)
-                    & (split_frame["spoof_label"] == 0)
-                ].sort_values(["source_recording_id", "utterance_id"])
-                if not candidate_frame.empty:
-                    imposter_candidates = [candidate_frame.iloc[0]]
-                    break
-            for probe in imposter_candidates:
+            impostor_candidates = _select_wrong_speaker_rows(
+                split_frame,
+                claimed_speaker_id=str(speaker_id),
+                enrollment_sources=enrollment_source_set,
+                split=str(split),
+                seed=seed,
+                count=wrong_speaker_trials,
+                strategy=impostor_strategy,
+            )
+            for _, probe in impostor_candidates.iterrows():
                 rows.append(
                     {
                         "trial_id": f"trial_{trial_counter:05d}",
@@ -304,8 +522,23 @@ def _dataset_summary(
             for label, count in trials["label"].value_counts().sort_index().items()
         },
         "mean_duration_seconds": float(quality_frame["duration_seconds"].mean()),
-        "mean_speech_ratio": float(quality_frame["speech_ratio"].mean()),
+        "mean_speech_ratio": float(quality_frame["speech_ratio"].dropna().mean()) if quality_frame["speech_ratio"].notna().any() else None,
         "speaker_disjoint_violations": int(speaker_report["violates_speaker_disjoint"].sum()),
+        "quality_scan_mode": str(data_cfg.get("quality_scan_mode", "full")),
+        "quality_measurement_counts": {
+            key: int(value)
+            for key, value in quality_frame["quality_measurement"].value_counts(dropna=False).sort_index().items()
+        },
+        "waveform_scanned_files": int((quality_frame["quality_measurement"] == "waveform").sum()),
+        "header_only_files": int((quality_frame["quality_measurement"] == "header_only").sum()),
+        "enrollment_policy_summary": (
+            "Enrollment utterances are chosen with a seed-stable ranking that prefers distinct "
+            "source recordings before reusing additional bona fide files."
+        ),
+        "wrong_speaker_policy_summary": (
+            f"{int(data_cfg.get('wrong_speaker_trials_per_speaker', 1))} wrong-speaker probe(s) per claimed speaker "
+            f"using {str(data_cfg.get('impostor_sampling_strategy', 'round_robin'))} impostor sampling."
+        ),
     }
 
 
@@ -336,8 +569,15 @@ def stage_private_corpus_dataset(config: dict[str, Any]) -> dict[str, Any]:
     metadata["utterance_id"] = metadata["utterance_id"].astype(str)
     metadata["source_recording_id"] = metadata["source_recording_id"].astype(str)
     metadata["spoof_label"] = metadata["spoof_label"].apply(_normalize_spoof_label)
+    data_cfg["seed"] = int(config["experiment"]["seed"])
 
-    quality = _quality_frame(metadata, speech_threshold=float(data_cfg["speech_threshold"]))
+    quality = _quality_frame(
+        metadata,
+        speech_threshold=float(data_cfg["speech_threshold"]),
+        scan_mode=str(data_cfg.get("quality_scan_mode", "full")),
+        waveform_sample_size=int(data_cfg.get("quality_waveform_sample_size", 0) or 0),
+        seed=int(config["experiment"]["seed"]),
+    )
     filtered, quality = _filter_by_quality(
         metadata,
         quality,

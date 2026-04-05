@@ -14,6 +14,7 @@ metadata mappings so the resulting manifests can be audited by supervisors.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 import shutil
 import tarfile
@@ -102,6 +103,13 @@ def _find_one(root: Path, pattern: str) -> Path:
         # Prefer the shortest path when duplicates exist inside nested wrappers.
         matches = sorted(matches, key=lambda path: (len(path.parts), str(path)))
     return matches[0]
+
+
+def _stable_rank(*parts: object, seed: int) -> int:
+    """Create a seed-stable ordering key independent of archive file ordering."""
+    payload = "|".join(str(part) for part in parts)
+    digest = hashlib.blake2b(f"{seed}|{payload}".encode("utf-8"), digest_size=8).hexdigest()
+    return int(digest, 16)
 
 
 def _read_table(path: Path, sep: str | None = None, header: int | None = None) -> pd.DataFrame:
@@ -231,6 +239,7 @@ def _manifest_from_2019_split(
 
 def _build_enrollment_catalog(
     eval_2019_utterances: pd.DataFrame,
+    seed: int,
 ) -> dict[str, list[dict[str, str]]]:
     """Create an audit-friendly enrollment catalog from 2019 eval bona fide audio.
 
@@ -244,7 +253,18 @@ def _build_enrollment_catalog(
     bona = eval_2019_utterances[eval_2019_utterances["spoof_label"] == 0].copy()
     pools: dict[str, list[dict[str, str]]] = {}
     for speaker_id, frame in bona.groupby("speaker_id"):
-        ranked = frame.sort_values(["source_recording_id", "utterance_id"]).drop_duplicates(
+        ranked = frame.copy()
+        ranked["_selection_rank"] = ranked.apply(
+            lambda row: _stable_rank(
+                "asvspoof-enroll",
+                speaker_id,
+                row["source_recording_id"],
+                row["utterance_id"],
+                seed=seed,
+            ),
+            axis=1,
+        )
+        ranked = ranked.sort_values(["_selection_rank", "source_recording_id", "utterance_id"]).drop_duplicates(
             subset=["source_recording_id"]
         )
         pools[str(speaker_id)] = [
@@ -261,6 +281,7 @@ def _select_enrollment_for_probe(
     enrollment_catalog: dict[str, list[dict[str, str]]],
     speaker_id: str,
     enrollment_count: int,
+    seed: int,
     blocked_sources: set[str] | None = None,
 ) -> list[dict[str, str]]:
     """Pick a leakage-safe enrollment subset for one probe.
@@ -286,6 +307,16 @@ def _select_enrollment_for_probe(
         for item in enrollment_catalog[speaker_id]
         if item["source_recording_id"] not in blocked_sources
     ]
+    candidates = sorted(
+        candidates,
+        key=lambda item: _stable_rank(
+            "asvspoof-enroll-probe",
+            speaker_id,
+            item["source_recording_id"],
+            Path(item["path"]).name,
+            seed=seed,
+        ),
+    )
     if len(candidates) < enrollment_count:
         raise ValueError(
             f"Speaker {speaker_id} has only {len(candidates)} leakage-safe enrollment "
@@ -301,6 +332,7 @@ def _build_2021_trial_manifest(
     eval_audio_dir: Path,
     enrollment_catalog: dict[str, list[dict[str, str]]],
     enrollment_count: int,
+    seed: int,
     test_split_name: str,
 ) -> pd.DataFrame:
     """Construct enrollment-conditioned trials for ASVspoof 2021 LA eval."""
@@ -332,6 +364,7 @@ def _build_2021_trial_manifest(
             enrollment_catalog,
             speaker_id,
             enrollment_count,
+            seed=seed,
             blocked_sources={probe_source},
         )
         enrollment_paths = [item["path"] for item in same_speaker_enrollment]
@@ -392,11 +425,21 @@ def _build_2021_trial_manifest(
     for speaker_id in speaker_ids:
         for row in bona_by_speaker[speaker_id]:
             other_candidates = [candidate for candidate in speaker_ids if candidate != speaker_id]
-            wrong_claim = other_candidates[0]
+            wrong_claim = sorted(
+                other_candidates,
+                key=lambda candidate: _stable_rank(
+                    "asvspoof-wrong-claim",
+                    speaker_id,
+                    row["file_id"],
+                    candidate,
+                    seed=seed,
+                ),
+            )[0]
             wrong_enrollment = _select_enrollment_for_probe(
                 enrollment_catalog,
                 wrong_claim,
                 enrollment_count,
+                seed=seed,
                 blocked_sources={str(row["probe_source"])},
             )
             rows.append(
@@ -470,7 +513,8 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
             )
 
     enrollment_count = int(data_cfg["enrollment_count"])
-    enrollment_pools = _build_enrollment_catalog(utter_eval)
+    selection_seed = int(config.get("experiment", {}).get("seed", 42))
+    enrollment_pools = _build_enrollment_catalog(utter_eval, seed=selection_seed)
     insufficient = {
         speaker_id: len(items)
         for speaker_id, items in enrollment_pools.items()
@@ -487,6 +531,7 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
         eval_audio_dir_2021 / "flac",
         enrollment_pools,
         enrollment_count=enrollment_count,
+        seed=selection_seed,
         test_split_name=str(data_cfg.get("test_split", "test")),
     )
 
@@ -518,6 +563,14 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
         },
         "speaker_split_violations": int(split_report["violates_speaker_disjoint"].sum()),
         "trial_leakage_violations": int(leakage["has_leakage"].sum()),
+        "enrollment_policy_summary": (
+            "Enrollment candidates are ranked with a seed-stable order over distinct source recordings "
+            "rather than relying on archive file order."
+        ),
+        "wrong_speaker_policy_summary": (
+            "Wrong-speaker claims reuse bona fide probes under seed-stable alternative claims while excluding "
+            "any enrollment source that overlaps the probe."
+        ),
     }
     save_frame(split_report, paths.manifest_root / "speaker_split_report.csv")
     save_frame(leakage, paths.manifest_root / "leakage_report.csv")

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
-  { name = "OpenAI Codex" }
+  { name = "BioVoice Research Maintainers" }
 ]
 dependencies = [
   "matplotlib>=3.8",

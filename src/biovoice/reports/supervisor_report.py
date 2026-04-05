@@ -41,6 +41,10 @@ def build_supervisor_report(summary: dict[str, Any]) -> str:
         lines.extend(["", "## Metric Interpretation"])
         for item in summary["metric_interpretation"]:
             lines.append(f"- {item}")
+    if "real_data_interpretation" in summary:
+        lines.extend(["", "## How To Interpret This Real-Data Baseline"])
+        for item in summary["real_data_interpretation"]:
+            lines.append(f"- {item}")
     lines.extend(
         [
             "",

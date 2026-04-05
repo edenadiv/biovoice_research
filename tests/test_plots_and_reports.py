@@ -77,6 +77,7 @@ def test_reports_include_supervisor_sections() -> None:
             "metrics": ["Accuracy: 0.5"],
             "dataset_review": ["Dataset mode: real_private_corpus"],
             "metric_interpretation": ["Interpret carefully."],
+            "real_data_interpretation": ["Measured evidence for this protocol only."],
             "figures": ["plots/confusion_matrix.png"],
             "artifact_map": ["reports/artifact_index.md"],
             "limitations": ["Synthetic data only."],
@@ -87,4 +88,5 @@ def test_reports_include_supervisor_sections() -> None:
     assert "Interpretation Notes" in run_report
     assert "How To Read This Report" in supervisor_report
     assert "Dataset Review" in supervisor_report
+    assert "How To Interpret This Real-Data Baseline" in supervisor_report
     assert "Artifact Map" in supervisor_report

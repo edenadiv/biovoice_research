@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import torch
 import yaml
 
+from biovoice.data.manifests import load_manifest
 from biovoice.utils.audio_io import save_audio
 from biovoice.workflows import prepare_data_workflow, run_joint_workflow
 
@@ -105,7 +107,12 @@ def _private_corpus_config(tmp_path: Path, metadata_path: Path) -> dict[str, obj
             "split_strategy": "speaker_disjoint",
             "use_existing_splits": False,
             "probe_trials_per_speaker": 1,
+            "wrong_speaker_trials_per_speaker": 2,
+            "impostor_sampling_strategy": "round_robin",
             "speech_threshold": 0.02,
+            "quality_scan_mode": "full",
+            "quality_waveform_sample_size": 4,
+            "quality_progress_every": 10,
         },
         "preprocessing": {
             "target_sample_rate": 16000,
@@ -148,6 +155,100 @@ def test_private_corpus_prepare_stages_manifests_and_reports(tmp_path: Path) -> 
     assert (run_root / "plots" / "speech_ratio_histogram.png").exists()
 
 
+def test_private_corpus_prepare_validates_required_columns(tmp_path: Path) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    metadata = pd.read_csv(metadata_path).drop(columns=["source_recording_id"])
+    metadata.to_csv(metadata_path, index=False)
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config_path = tmp_path / "private_missing_column.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        prepare_data_workflow(config_path)
+
+
+def test_private_corpus_prepare_normalizes_string_spoof_labels_and_absolute_paths(tmp_path: Path) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    metadata = pd.read_csv(metadata_path)
+    absolute_paths = []
+    for _, row in metadata.iterrows():
+        resolved = (metadata_path.parent / str(row["relative_path"])).resolve()
+        absolute_paths.append(str(resolved))
+    metadata["path"] = absolute_paths
+    metadata = metadata.drop(columns=["relative_path"])
+    metadata["spoof_label"] = metadata["spoof_label"].map({0: "bona_fide", 1: "spoof"})
+    metadata.to_csv(metadata_path, index=False)
+
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config_path = tmp_path / "private_absolute_paths.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    prepare_data_workflow(config_path)
+    utterances = load_manifest(config["data"]["utterance_manifest_path"])
+    assert set(utterances["spoof_label"].unique()) == {0, 1}
+    assert all(Path(path).is_absolute() for path in utterances["path"].tolist())
+
+
+def test_private_corpus_prepare_filters_short_audio(tmp_path: Path) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    metadata = pd.read_csv(metadata_path)
+    short_waveform = _base_waveform(180.0, duration_seconds=0.25)
+    short_path = metadata_path.parent / "audio" / "speaker_00" / "speaker_00_short.wav"
+    save_audio(short_path, short_waveform, 16000)
+    metadata = pd.concat(
+        [
+            metadata,
+            pd.DataFrame(
+                [
+                    {
+                        "utterance_id": "speaker_00_short",
+                        "speaker_id": "speaker_00",
+                        "relative_path": str(short_path.relative_to(metadata_path.parent)),
+                        "spoof_label": 0,
+                        "source_recording_id": "speaker_00_short_source",
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    metadata.to_csv(metadata_path, index=False)
+
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config_path = tmp_path / "private_short_filter.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    prepare_data_workflow(config_path)
+    utterances = load_manifest(config["data"]["utterance_manifest_path"])
+    assert "speaker_00_short" not in set(utterances["utterance_id"].tolist())
+
+
+@pytest.mark.parametrize(
+    ("scan_mode", "expected_values"),
+    [
+        ("full", {"waveform"}),
+        ("header_only", {"header_only"}),
+        ("header_plus_sample", {"header_only", "waveform"}),
+    ],
+)
+def test_private_corpus_quality_scan_modes(tmp_path: Path, scan_mode: str, expected_values: set[str]) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config["data"]["quality_scan_mode"] = scan_mode
+    config["data"]["quality_waveform_sample_size"] = 6
+    config_path = tmp_path / f"private_{scan_mode}.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    prepare_data_workflow(config_path)
+    quality_frame = pd.read_csv(Path(config["data"]["manifest_output_dir"]) / "quality_summary.csv")
+    assert expected_values.issubset(set(quality_frame["quality_measurement"].unique()))
+    if scan_mode == "header_only":
+        assert quality_frame["speech_ratio"].isna().all()
+    if scan_mode == "header_plus_sample":
+        assert quality_frame["speech_ratio"].notna().any()
+        assert quality_frame["speech_ratio"].isna().any()
+
+
 def test_private_corpus_prepare_rejects_split_overlap(tmp_path: Path) -> None:
     metadata_path = _write_private_corpus_fixture(tmp_path / "fixture", include_splits=True, overlapping_split=True)
     config = _private_corpus_config(tmp_path, metadata_path)
@@ -161,6 +262,38 @@ def test_private_corpus_prepare_rejects_split_overlap(tmp_path: Path) -> None:
         assert "Speaker-disjoint" in str(error)
     else:  # pragma: no cover - explicit failure branch
         raise AssertionError("Expected speaker-disjoint validation to fail.")
+
+
+@pytest.mark.parametrize("strategy", ["round_robin", "seeded_shuffle"])
+def test_private_corpus_wrong_speaker_trial_multiplicity(tmp_path: Path, strategy: str) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config["data"]["wrong_speaker_trials_per_speaker"] = 3
+    config["data"]["impostor_sampling_strategy"] = strategy
+    config_path = tmp_path / f"private_wrong_speaker_{strategy}.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    prepare_data_workflow(config_path)
+    trials = load_manifest(config["data"]["trial_manifest_path"])
+    wrong = trials[(trials["split"] == "test") & (trials["label"] == "wrong_speaker")]
+    counts = wrong.groupby("speaker_id").size().to_dict()
+    assert counts
+    assert set(counts.values()) == {3}
+
+
+def test_private_corpus_prepare_rejects_when_target_trials_disappear_after_leakage_filter(tmp_path: Path) -> None:
+    metadata_path = _write_private_corpus_fixture(tmp_path / "fixture")
+    metadata = pd.read_csv(metadata_path)
+    mask = metadata["speaker_id"].isin(["speaker_03", "speaker_04"]) & (metadata["spoof_label"] == 0)
+    metadata.loc[mask, "source_recording_id"] = metadata.loc[mask, "speaker_id"].astype(str) + "_shared_source"
+    metadata.to_csv(metadata_path, index=False)
+
+    config = _private_corpus_config(tmp_path, metadata_path)
+    config_path = tmp_path / "private_target_overlap.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required trial labels"):
+        prepare_data_workflow(config_path)
 
 
 def test_private_corpus_joint_workflow_smoke(tmp_path: Path) -> None:

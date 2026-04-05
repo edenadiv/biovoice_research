@@ -26,7 +26,12 @@ data:
   split_strategy: speaker_disjoint
   use_existing_splits: false
   probe_trials_per_speaker: 2
+  wrong_speaker_trials_per_speaker: 3
+  impostor_sampling_strategy: round_robin
   speech_threshold: 0.02
+  quality_scan_mode: header_plus_sample
+  quality_waveform_sample_size: 250
+  quality_progress_every: 250
 
 preprocessing:
   target_sample_rate: 16000

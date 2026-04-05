@@ -45,7 +45,7 @@ tests/        Unit and smoke tests
 outputs/      Saved runs, figures, tables, reports, and notebook exports
 ```
 
-For real-data setup details, start with [real_data_onboarding.md](/Users/edenadiv/Desktop/biovoice/docs/real_data_onboarding.md).
+For real-data setup details, start with [Real-Data Onboarding](docs/real_data_onboarding.md).
 
 ## Installation
 ```bash
@@ -103,14 +103,17 @@ Optional raw metadata columns:
 
 If `split` is omitted, the importer generates a deterministic speaker-disjoint split when possible.
 
+For a fuller explanation of leakage rules and manifest semantics, see [Data Protocol](docs/data_protocol.md).
+
 ## Key Entry Points
 - CLI: `biovoice`
-- Data preparation: [scripts/prepare_data.py](/Users/edenadiv/Desktop/biovoice/scripts/prepare_data.py)
-- Real-data import: [scripts/import_real_dataset.py](/Users/edenadiv/Desktop/biovoice/scripts/import_real_dataset.py)
-- SV baseline: [scripts/train_baseline_sv.py](/Users/edenadiv/Desktop/biovoice/scripts/train_baseline_sv.py)
-- Spoof baseline: [scripts/train_baseline_spoof.py](/Users/edenadiv/Desktop/biovoice/scripts/train_baseline_spoof.py)
-- Joint fusion run: [scripts/train_joint_model.py](/Users/edenadiv/Desktop/biovoice/scripts/train_joint_model.py)
-- Supervisor report: [scripts/generate_supervisor_report.py](/Users/edenadiv/Desktop/biovoice/scripts/generate_supervisor_report.py)
+- Data preparation: [`scripts/prepare_data.py`](scripts/prepare_data.py)
+- Real-data import: [`scripts/import_real_dataset.py`](scripts/import_real_dataset.py)
+- Official ASVspoof import: [`scripts/import_asvspoof2021_la.py`](scripts/import_asvspoof2021_la.py)
+- SV baseline: [`scripts/train_baseline_sv.py`](scripts/train_baseline_sv.py)
+- Spoof baseline: [`scripts/train_baseline_spoof.py`](scripts/train_baseline_spoof.py)
+- Joint fusion run: [`scripts/train_joint_model.py`](scripts/train_joint_model.py)
+- Supervisor report: [`scripts/generate_supervisor_report.py`](scripts/generate_supervisor_report.py)
 
 ## Output Artifacts
 Each run saves:
@@ -140,7 +143,7 @@ Runs live under `outputs/runs/<timestamp>_<experiment>/`.
 2. Open `reports/plot_inventory.md` next so each figure is paired with an interpretation note.
 3. Review `metrics.json` and `tables/metric_summary.csv` together.
 4. Inspect `predictions.csv` and the explainability case files only after the global figures look sensible.
-5. Treat demo-data numbers as pipeline evidence, not as benchmark evidence.
+5. Treat demo-data numbers as pipeline evidence and real-data numbers as alpha baseline evidence for the evaluated protocol only.
 
 ## Alpha Exit Criteria
 - Repository runs end-to-end on synthetic/demo data
@@ -174,6 +177,7 @@ Runs live under `outputs/runs/<timestamp>_<experiment>/`.
 - Synthetic/demo data only validates plumbing, not real-world performance.
 - Explainability outputs are supporting evidence, not proof of causality.
 - Probability outputs should be interpreted with the reliability diagram rather than assumed to be perfectly calibrated.
+- Wrong-speaker decision quality depends strongly on how impostor probes are constructed, so real-data staging policy matters.
 - Stronger pretrained backbones and broader benchmarking are future work.
 
 ## Next Steps After Alpha
