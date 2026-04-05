@@ -1,0 +1,71 @@
+"""Supervisor-facing report assembly."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+
+def build_supervisor_report(summary: dict[str, Any]) -> str:
+    """Render a supervisor-oriented Markdown summary.
+
+    The output deliberately uses plain language first so a supervisor can scan
+    it quickly before diving into the raw metrics and figures.
+    """
+    lines = [
+        "# Supervisor Review Report",
+        "",
+        "## Project Summary",
+        summary["project_summary"],
+        "",
+        "## How To Read This Report",
+        "Start with the alpha-exit evidence, then inspect the key metrics, then open the mandatory figures and the walkthrough notebook. Treat the demo-data numbers as pipeline evidence rather than scientific performance claims.",
+        "",
+        "## Alpha Exit Criteria Evidence",
+    ]
+    for item in summary["alpha_evidence"]:
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## Key Metrics",
+        ]
+    )
+    for item in summary["metrics"]:
+        lines.append(f"- {item}")
+    if "metric_interpretation" in summary:
+        lines.extend(["", "## Metric Interpretation"])
+        for item in summary["metric_interpretation"]:
+            lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## Mandatory Figures",
+        ]
+    )
+    for item in summary["figures"]:
+        lines.append(f"- {item}")
+    if "artifact_map" in summary:
+        lines.extend(["", "## Artifact Map"])
+        for item in summary["artifact_map"]:
+            lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## Limitations",
+        ]
+    )
+    for item in summary["limitations"]:
+        lines.append(f"- {item}")
+    if "next_steps" in summary:
+        lines.extend(["", "## Recommended Next Steps"])
+        for item in summary["next_steps"]:
+            lines.append(f"- {item}")
+    return "\n".join(lines)
+
+
+def save_supervisor_report(markdown: str, path: str | Path) -> None:
+    """Persist the supervisor report."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(markdown, encoding="utf-8")

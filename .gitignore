@@ -1,0 +1,14 @@
+.DS_Store
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.matplotlib/
+__pycache__/
+*.egg-info/
+outputs/runs/
+outputs/figures/
+outputs/tables/
+outputs/reports/
+outputs/notebooks_exports/
+demo_data/

@@ -1,0 +1,87 @@
+experiment:
+  name: alpha_demo
+  mode: fusion_plus_interpretable_features
+  seed: 42
+  output_root: outputs/runs
+  save_predictions_as: csv
+
+data:
+  demo_root: demo_data
+  utterance_manifest_path: demo_data/manifests/utterances.csv
+  trial_manifest_path: demo_data/manifests/trials.csv
+  split_manifest_dir: demo_data/manifests/splits
+  sample_rate: 16000
+  train_split: train
+  validation_split: val
+  test_split: test
+  max_duration_seconds: 4.0
+  min_duration_seconds: 1.0
+  enrollment_count: 3
+  speaker_disjoint: true
+  speech_threshold: 0.02
+  synthetic_speakers: 6
+  synthetic_utterances_per_speaker: 8
+  synthetic_probe_trials_per_speaker: 3
+
+preprocessing:
+  target_sample_rate: 16000
+  mono: true
+  loudness_normalize: true
+  silence_trim: true
+  silence_threshold: 0.02
+  min_speech_ratio: 0.25
+  pad_to_seconds: 4.0
+  truncate_to_seconds: 4.0
+
+segmentation:
+  window_seconds: 1.0
+  hop_seconds: 0.5
+  min_segment_seconds: 0.5
+
+model:
+  feature:
+    n_mels: 64
+    n_fft: 400
+    hop_length: 160
+    win_length: 400
+  speaker_encoder:
+    embedding_dim: 64
+    hidden_channels: 32
+  anti_spoof:
+    hidden_channels: 32
+  fusion:
+    use_trainable_head: true
+    include_interpretable_features: true
+
+training:
+  device: cpu
+  batch_size: 8
+  epochs: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 3
+
+evaluation:
+  sv_threshold: 0.55
+  spoof_threshold: 0.50
+  manual_review_margin: 0.0
+  calibration_bins: 10
+  threshold_sweep_points: 11
+
+plotting:
+  dpi: 180
+  style: seaborn-v0_8-whitegrid
+
+explainability:
+  suspicious_segment_count: 3
+  explanation_feature_count: 5
+
+ablation:
+  enabled: true
+  segment_windows:
+    - 0.5
+    - 1.0
+    - 1.5
+  overlaps:
+    - 0.25
+    - 0.50

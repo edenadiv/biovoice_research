@@ -1,0 +1,7 @@
+data:
+  demo_root: demo_data
+  sample_rate: 16000
+  synthetic_speakers: 6
+  synthetic_utterances_per_speaker: 8
+  synthetic_probe_trials_per_speaker: 3
+  enrollment_count: 3

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biovoice-alpha"
+version = "0.1.0"
+description = "Research-first alpha repository for explainable spoof-aware speaker verification."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "OpenAI Codex" }
+]
+dependencies = [
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pyyaml>=6.0",
+  "rich>=13.7",
+  "scikit-learn>=1.4",
+  "scipy>=1.13",
+  "torch>=2.3",
+  "torchaudio>=2.3",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ipykernel>=6.29",
+  "jupyter>=1.0",
+  "nbformat>=5.10",
+  "pytest>=8.2",
+]
+
+[project.scripts]
+biovoice = "biovoice.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,3 @@
+plotting:
+  dpi: 180
+  style: seaborn-v0_8-whitegrid

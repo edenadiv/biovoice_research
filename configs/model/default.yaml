@@ -1,0 +1,14 @@
+model:
+  feature:
+    n_mels: 64
+    n_fft: 400
+    hop_length: 160
+    win_length: 400
+  speaker_encoder:
+    embedding_dim: 64
+    hidden_channels: 32
+  anti_spoof:
+    hidden_channels: 32
+  fusion:
+    use_trainable_head: true
+    include_interpretable_features: true

@@ -1,0 +1,9 @@
+preprocessing:
+  target_sample_rate: 16000
+  mono: true
+  loudness_normalize: true
+  silence_trim: true
+  silence_threshold: 0.02
+  min_speech_ratio: 0.25
+  pad_to_seconds: 4.0
+  truncate_to_seconds: 4.0

@@ -1,0 +1,6 @@
+evaluation:
+  sv_threshold: 0.55
+  spoof_threshold: 0.50
+  manual_review_margin: 0.0
+  calibration_bins: 10
+  threshold_sweep_points: 11
