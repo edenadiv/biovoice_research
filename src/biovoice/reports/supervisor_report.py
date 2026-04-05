@@ -19,7 +19,7 @@ def build_supervisor_report(summary: dict[str, Any]) -> str:
         summary["project_summary"],
         "",
         "## How To Read This Report",
-        "Start with the alpha-exit evidence, then inspect the key metrics, then open the mandatory figures and the walkthrough notebook. Treat the demo-data numbers as pipeline evidence rather than scientific performance claims.",
+        "Start with the alpha-exit evidence, then inspect the key metrics, then open the mandatory figures and the walkthrough notebook. Treat the current run numbers as measured baseline evidence rather than broad real-world performance claims.",
         "",
         "## Alpha Exit Criteria Evidence",
     ]
@@ -33,6 +33,10 @@ def build_supervisor_report(summary: dict[str, Any]) -> str:
     )
     for item in summary["metrics"]:
         lines.append(f"- {item}")
+    if "dataset_review" in summary:
+        lines.extend(["", "## Dataset Review"])
+        for item in summary["dataset_review"]:
+            lines.append(f"- {item}")
     if "metric_interpretation" in summary:
         lines.extend(["", "## Metric Interpretation"])
         for item in summary["metric_interpretation"]:

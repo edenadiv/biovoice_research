@@ -1,4 +1,10 @@
-"""Audio quality statistics and leakage-aware dataset checks."""
+"""Audio quality statistics and leakage-aware dataset checks.
+
+The repository treats split safety as part of the scientific method rather than
+an optional housekeeping detail. These helpers therefore support both
+human-readable audit tables and hard validation failures when leakage is
+detected.
+"""
 
 from __future__ import annotations
 
@@ -87,17 +93,80 @@ def summarize_audio_quality(waveform: torch.Tensor, sample_rate: int, threshold:
 
 
 def leakage_overlap_report(trials: pd.DataFrame) -> pd.DataFrame:
-    """Flag obvious leakage patterns in a trial manifest."""
+    """Flag obvious leakage patterns in a trial manifest.
+
+    Two overlap modes are inspected:
+    1. The exact probe path appears in the enrollment set.
+    2. The probe shares a ``source_recording_id`` with one of the enrollment
+       files, which can happen when a corpus stores multiple derivatives from
+       the same source recording.
+    """
     rows: list[dict[str, Any]] = []
     for _, row in trials.iterrows():
         probe_path = row["probe_path"]
         enrollment_paths = set(row["enrollment_paths"])
         overlap = probe_path in enrollment_paths
+        probe_source = row.get("probe_source_recording_id")
+        enrollment_sources = {
+            item for item in str(row.get("enrollment_source_recording_ids", "")).split("|") if item
+        }
+        source_overlap = bool(probe_source) and probe_source in enrollment_sources
         rows.append(
             {
                 "trial_id": row["trial_id"],
                 "speaker_id": row["speaker_id"],
                 "probe_in_enrollment": overlap,
+                "source_recording_overlap": source_overlap,
+                "has_leakage": overlap or source_overlap,
             }
         )
     return pd.DataFrame(rows)
+
+
+def assert_no_trial_leakage(trials: pd.DataFrame) -> pd.DataFrame:
+    """Validate that no trial leaks enrollment information into the probe.
+
+    The returned frame is still useful for saved audit artifacts, but the
+    function raises immediately when any row violates the trial-safe protocol.
+    """
+    report = leakage_overlap_report(trials)
+    if report["has_leakage"].any():
+        failing_trials = report.loc[report["has_leakage"], "trial_id"].tolist()
+        raise ValueError(
+            "Leakage detected between enrollment and probe audio for trials: "
+            f"{failing_trials}"
+        )
+    return report
+
+
+def speaker_split_report(utterances: pd.DataFrame) -> pd.DataFrame:
+    """Summarize whether a speaker appears in more than one split.
+
+    For speaker-disjoint protocols, each speaker should appear in exactly one
+    split. The report is also useful when speaker overlap is intentionally
+    allowed, because it documents that choice explicitly for reviewers.
+    """
+    rows: list[dict[str, Any]] = []
+    for speaker_id, frame in utterances.groupby("speaker_id"):
+        splits = sorted(str(value) for value in frame["split"].dropna().unique())
+        rows.append(
+            {
+                "speaker_id": speaker_id,
+                "splits": "|".join(splits),
+                "split_count": len(splits),
+                "violates_speaker_disjoint": len(splits) > 1,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def assert_speaker_disjoint(utterances: pd.DataFrame) -> pd.DataFrame:
+    """Validate speaker-disjoint splits and return the audit report."""
+    report = speaker_split_report(utterances)
+    if report["violates_speaker_disjoint"].any():
+        failing = report.loc[report["violates_speaker_disjoint"], "speaker_id"].tolist()
+        raise ValueError(
+            "Speaker-disjoint split validation failed for speakers appearing in "
+            f"multiple splits: {failing}"
+        )
+    return report

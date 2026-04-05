@@ -75,6 +75,7 @@ def test_reports_include_supervisor_sections() -> None:
             "project_summary": "Summary",
             "alpha_evidence": ["Evidence"],
             "metrics": ["Accuracy: 0.5"],
+            "dataset_review": ["Dataset mode: real_private_corpus"],
             "metric_interpretation": ["Interpret carefully."],
             "figures": ["plots/confusion_matrix.png"],
             "artifact_map": ["reports/artifact_index.md"],
@@ -85,4 +86,5 @@ def test_reports_include_supervisor_sections() -> None:
     assert "Alpha Exit Checklist" in run_report
     assert "Interpretation Notes" in run_report
     assert "How To Read This Report" in supervisor_report
+    assert "Dataset Review" in supervisor_report
     assert "Artifact Map" in supervisor_report

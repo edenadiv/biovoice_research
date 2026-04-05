@@ -1,23 +1,24 @@
 experiment:
-  name: alpha_demo
+  name: private_corpus_baseline
   mode: fusion_plus_interpretable_features
   seed: 42
   output_root: outputs/runs
   save_predictions_as: csv
 
 data:
-  source_type: demo
-  dataset_name: alpha_demo
-  demo_root: demo_data
-  manifest_output_dir: demo_data/manifests
-  utterance_manifest_path: demo_data/manifests/utterances.csv
-  trial_manifest_path: demo_data/manifests/trials.csv
-  split_manifest_dir: demo_data/manifests/splits
+  source_type: real_private_corpus
+  dataset_name: my_private_corpus
+  dataset_root: sample_data/my_private_corpus
+  raw_metadata_path: sample_data/my_private_corpus/raw_metadata.csv
+  manifest_output_dir: sample_data/my_private_corpus/staged_manifests
+  utterance_manifest_path: sample_data/my_private_corpus/staged_manifests/utterances.csv
+  trial_manifest_path: sample_data/my_private_corpus/staged_manifests/trials.csv
+  split_manifest_dir: sample_data/my_private_corpus/staged_manifests/splits
   sample_rate: 16000
   train_split: train
   validation_split: val
   test_split: test
-  max_duration_seconds: 4.0
+  max_duration_seconds: 8.0
   min_duration_seconds: 1.0
   enrollment_count: 3
   speaker_disjoint: true
@@ -26,9 +27,6 @@ data:
   use_existing_splits: false
   probe_trials_per_speaker: 2
   speech_threshold: 0.02
-  synthetic_speakers: 6
-  synthetic_utterances_per_speaker: 8
-  synthetic_probe_trials_per_speaker: 3
 
 preprocessing:
   target_sample_rate: 16000

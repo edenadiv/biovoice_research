@@ -26,6 +26,11 @@ def prepare_data(config: str = "configs/default.yaml") -> None:
     typer.echo(str(prepare_data_workflow(Path(config))))
 
 
+@app.command("import-real-dataset")
+def import_real_dataset(config: str = "configs/private_corpus_template.yaml") -> None:
+    typer.echo(str(prepare_data_workflow(Path(config))))
+
+
 @app.command("inspect-data")
 def inspect_data(config: str = "configs/default.yaml") -> None:
     typer.echo(str(inspect_data_workflow(Path(config))))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -79,23 +80,40 @@ class TrialDataset(Dataset):
         self.frame = load_manifest(manifest) if isinstance(manifest, (str, bytes, Path)) else manifest.copy()
         self.frame = self.frame[self.frame["split"] == split].reset_index(drop=True)
         self.preprocessing_config = preprocessing_config
+        # Real evaluation manifests can reuse the same enrollment files across a
+        # large number of adjacent trials. A small LRU cache avoids repeatedly
+        # decoding and preprocessing identical audio without trying to keep the
+        # entire corpus resident in memory.
+        self.cache_size = int(preprocessing_config.get("inference_waveform_cache_size", 0))
+        self._waveform_cache: OrderedDict[str, torch.Tensor] = OrderedDict()
 
     def __len__(self) -> int:
         return len(self.frame)
 
+    def _get_processed_waveform(self, path: str) -> torch.Tensor:
+        """Load, preprocess, and optionally cache one audio path."""
+        if self.cache_size > 0 and path in self._waveform_cache:
+            waveform = self._waveform_cache.pop(path)
+            self._waveform_cache[path] = waveform
+            return waveform
+        waveform, sample_rate = load_audio(path)
+        processed = preprocess_audio(waveform, sample_rate, self.preprocessing_config).waveform
+        if self.cache_size > 0:
+            self._waveform_cache[path] = processed
+            while len(self._waveform_cache) > self.cache_size:
+                self._waveform_cache.popitem(last=False)
+        return processed
+
     def __getitem__(self, index: int) -> TrialAudioBundle:
         row = self.frame.iloc[index]
-        probe_waveform, probe_rate = load_audio(row["probe_path"])
-        processed_probe = preprocess_audio(probe_waveform, probe_rate, self.preprocessing_config)
+        processed_probe = self._get_processed_waveform(row["probe_path"])
         enrollment_waveforms = []
         for path in row["enrollment_paths"]:
-            waveform, sample_rate = load_audio(path)
-            processed = preprocess_audio(waveform, sample_rate, self.preprocessing_config)
-            enrollment_waveforms.append(processed.waveform)
+            enrollment_waveforms.append(self._get_processed_waveform(path))
         return TrialAudioBundle(
             trial_id=row["trial_id"],
             speaker_id=row["speaker_id"],
-            probe_waveform=processed_probe.waveform,
+            probe_waveform=processed_probe,
             enrollment_waveforms=enrollment_waveforms,
             probe_path=row["probe_path"],
             enrollment_paths=list(row["enrollment_paths"]),

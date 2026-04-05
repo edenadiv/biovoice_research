@@ -15,6 +15,7 @@ from biovoice.models.losses import spoof_classification_loss
 from biovoice.models.model_factory import build_anti_spoof_model
 from biovoice.training.callbacks import EarlyStopping
 from biovoice.training.checkpointing import save_checkpoint
+from biovoice.training.device import resolve_device
 from biovoice.training.optimization import build_optimizer
 from biovoice.training.trainer import fit_model
 from biovoice.utils.serialization import save_json
@@ -33,6 +34,7 @@ def _spoof_accuracy(outputs: dict[str, torch.Tensor], batch: dict[str, torch.Ten
 
 def train_spoof_baseline(config: dict[str, Any], run_dir: Path) -> dict[str, Any]:
     """Train the baseline anti-spoof model and save checkpoints/history."""
+    device = resolve_device(config["training"].get("device", "auto"))
     utterance_manifest = load_manifest(config["data"]["utterance_manifest_path"])
     validation_split = config["data"]["validation_split"]
     if (utterance_manifest["split"] == validation_split).sum() == 0:
@@ -57,7 +59,7 @@ def train_spoof_baseline(config: dict[str, Any], run_dir: Path) -> dict[str, Any
         train_loader,
         val_loader,
         optimizer=optimizer,
-        device=config["training"]["device"],
+        device=device,
         epochs=int(config["training"]["epochs"]),
         loss_fn=_spoof_loss,
         metric_fn=_spoof_accuracy,

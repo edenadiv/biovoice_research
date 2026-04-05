@@ -45,6 +45,8 @@ tests/        Unit and smoke tests
 outputs/      Saved runs, figures, tables, reports, and notebook exports
 ```
 
+For real-data setup details, start with [real_data_onboarding.md](/Users/edenadiv/Desktop/biovoice/docs/real_data_onboarding.md).
+
 ## Installation
 ```bash
 python3.11 -m venv .venv
@@ -63,6 +65,25 @@ python scripts/generate_supervisor_report.py --config configs/default.yaml
 pytest
 ```
 
+## Real-Data Baseline Commands
+```bash
+cp configs/private_corpus_template.yaml configs/my_private_corpus.yaml
+# edit dataset_root, raw_metadata_path, and manifest_output_dir
+python scripts/import_real_dataset.py --config configs/my_private_corpus.yaml
+python scripts/train_baseline_sv.py --config configs/my_private_corpus.yaml
+python scripts/train_baseline_spoof.py --config configs/my_private_corpus.yaml
+python scripts/train_joint_model.py --config configs/my_private_corpus.yaml
+```
+
+## Official ASVspoof 2021 LA Commands
+```bash
+# first place the official archives under external_data/asvspoof/raw/
+python scripts/import_asvspoof2021_la.py --config configs/asvspoof2021_la.yaml
+python scripts/train_baseline_sv.py --config configs/asvspoof2021_la.yaml
+python scripts/train_baseline_spoof.py --config configs/asvspoof2021_la.yaml
+python scripts/train_joint_model.py --config configs/asvspoof2021_la.yaml
+```
+
 ## Data Format
 The repo uses two manifest types:
 - `utterances.csv`: utterance-level training data with `utterance_id`, `speaker_id`, `path`, `split`, `spoof_label`
@@ -70,9 +91,22 @@ The repo uses two manifest types:
 
 Synthetic/demo data is generated under `demo_data/` and is explicitly labeled as smoke-test only.
 
+For real private-corpus staging, the raw metadata table must include:
+- `utterance_id`
+- `speaker_id`
+- either `path` or `relative_path`
+- `spoof_label`
+- `source_recording_id`
+
+Optional raw metadata columns:
+- `split`: use this if you want to keep a pre-defined split protocol
+
+If `split` is omitted, the importer generates a deterministic speaker-disjoint split when possible.
+
 ## Key Entry Points
 - CLI: `biovoice`
 - Data preparation: [scripts/prepare_data.py](/Users/edenadiv/Desktop/biovoice/scripts/prepare_data.py)
+- Real-data import: [scripts/import_real_dataset.py](/Users/edenadiv/Desktop/biovoice/scripts/import_real_dataset.py)
 - SV baseline: [scripts/train_baseline_sv.py](/Users/edenadiv/Desktop/biovoice/scripts/train_baseline_sv.py)
 - Spoof baseline: [scripts/train_baseline_spoof.py](/Users/edenadiv/Desktop/biovoice/scripts/train_baseline_spoof.py)
 - Joint fusion run: [scripts/train_joint_model.py](/Users/edenadiv/Desktop/biovoice/scripts/train_joint_model.py)
@@ -97,6 +131,7 @@ The polished run layout now also includes:
 - `tables/metric_summary.csv`: flattened metric table
 - `reports/plot_inventory.md`: per-figure interpretation notes
 - `tables/threshold_sweep.csv`: operating-point sweep table
+- `reports/dataset_review.json`: dataset assumptions, split protocol, and leakage summary for the run
 
 Runs live under `outputs/runs/<timestamp>_<experiment>/`.
 

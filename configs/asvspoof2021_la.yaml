@@ -1,34 +1,38 @@
 experiment:
-  name: alpha_demo
+  name: asvspoof2021_la_real
   mode: fusion_plus_interpretable_features
   seed: 42
   output_root: outputs/runs
   save_predictions_as: csv
 
 data:
-  source_type: demo
-  dataset_name: alpha_demo
-  demo_root: demo_data
-  manifest_output_dir: demo_data/manifests
-  utterance_manifest_path: demo_data/manifests/utterances.csv
-  trial_manifest_path: demo_data/manifests/trials.csv
-  split_manifest_dir: demo_data/manifests/splits
+  source_type: asvspoof2021_la
+  dataset_name: ASVspoof2021_LA
+  manifest_output_dir: external_data/asvspoof/staged_manifests
+  utterance_manifest_path: external_data/asvspoof/staged_manifests/utterances.csv
+  trial_manifest_path: external_data/asvspoof/staged_manifests/trials.csv
+  split_manifest_dir: external_data/asvspoof/staged_manifests/splits
+  asvspoof2019_la_zip: external_data/asvspoof/raw/ASVspoof2019_LA.zip
+  asvspoof2021_la_eval_tar: external_data/asvspoof/raw/ASVspoof2021_LA_eval.tar.gz
+  asvspoof2021_keys_tar: external_data/asvspoof/LA-keys-full.tar.gz
+  asvspoof_meta_tar: external_data/asvspoof/ASVspoof2019_2021_VCTK_VCC_MetaInfo.tar.gz
+  extract_root: external_data/asvspoof/extracted
   sample_rate: 16000
   train_split: train
   validation_split: val
   test_split: test
-  max_duration_seconds: 4.0
+  max_duration_seconds: 12.0
   min_duration_seconds: 1.0
   enrollment_count: 3
   speaker_disjoint: true
   require_speaker_disjoint: true
-  split_strategy: speaker_disjoint
-  use_existing_splits: false
-  probe_trials_per_speaker: 2
+  split_strategy: official_protocol
+  use_existing_splits: true
   speech_threshold: 0.02
-  synthetic_speakers: 6
-  synthetic_utterances_per_speaker: 8
-  synthetic_probe_trials_per_speaker: 3
+  quality_scan_mode: header_plus_sample
+  quality_waveform_sample_size: 4000
+  quality_progress_every: 250
+  probe_trials_per_speaker:
 
 preprocessing:
   target_sample_rate: 16000
@@ -36,9 +40,10 @@ preprocessing:
   loudness_normalize: true
   silence_trim: true
   silence_threshold: 0.02
-  min_speech_ratio: 0.25
+  min_speech_ratio: 0.20
   pad_to_seconds: 4.0
   truncate_to_seconds: 4.0
+  inference_waveform_cache_size: 1024
 
 segmentation:
   window_seconds: 1.0
@@ -62,11 +67,11 @@ model:
 
 training:
   device: auto
-  batch_size: 8
+  batch_size: 16
   epochs: 4
   learning_rate: 0.001
   weight_decay: 0.0001
-  early_stopping_patience: 3
+  early_stopping_patience: 2
 
 evaluation:
   sv_threshold: 0.55
@@ -74,6 +79,7 @@ evaluation:
   manual_review_margin: 0.0
   calibration_bins: 10
   threshold_sweep_points: 11
+  prediction_progress_every: 500
 
 plotting:
   dpi: 180
@@ -82,6 +88,7 @@ plotting:
 explainability:
   suspicious_segment_count: 3
   explanation_feature_count: 5
+  max_saved_case_files: 100
 
 ablation:
   enabled: true

@@ -21,6 +21,8 @@ def score_segments(
 ) -> tuple[list[dict], torch.Tensor]:
     """Score segments for spoof probability and speaker consistency."""
     segments, metadata = segment_waveform(waveform, sample_rate, segmentation_config)
+    device = enrollment_embedding.device
+    segments = segments.to(device)
     with torch.no_grad():
         segment_embeddings = speaker_encoder(segments)
         similarities = torch.nn.functional.cosine_similarity(
@@ -31,7 +33,7 @@ def score_segments(
         spoof_output = anti_spoof_model(segments)
         spoof_probs = spoof_output["probability"]
     rows = []
-    for info, sim, spoof in zip(metadata, similarities.tolist(), spoof_probs.tolist()):
+    for info, sim, spoof in zip(metadata, similarities.detach().cpu().tolist(), spoof_probs.detach().cpu().tolist()):
         rows.append(
             {
                 **info.to_dict(),
@@ -39,4 +41,4 @@ def score_segments(
                 "spoof_probability": float(spoof),
             }
         )
-    return rows, segments
+    return rows, segments.detach().cpu()

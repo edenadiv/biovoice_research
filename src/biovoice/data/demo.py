@@ -16,8 +16,10 @@ import pandas as pd
 import torch
 
 from biovoice.data.manifests import save_manifest, save_split_manifests
+from biovoice.data.quality_checks import assert_no_trial_leakage, speaker_split_report
 from biovoice.utils.audio_io import save_audio
 from biovoice.utils.path_utils import resolve_path
+from biovoice.utils.serialization import save_frame, save_json
 
 
 def _speaker_frequency(speaker_index: int) -> float:
@@ -74,14 +76,14 @@ def _split_speakers(speaker_ids: list[str]) -> dict[str, list[str]]:
     return {"train": train, "val": val, "test": test}
 
 
-def generate_demo_dataset(config: dict[str, Any]) -> dict[str, Path]:
+def generate_demo_dataset(config: dict[str, Any]) -> dict[str, Any]:
     """Generate synthetic audio and leakage-safe manifests."""
     data_cfg = config["data"]
     sample_rate = int(data_cfg["sample_rate"])
     root = resolve_path(data_cfg["demo_root"])
     audio_root = root / "audio"
-    manifests_root = root / "manifests"
-    splits_root = manifests_root / "splits"
+    manifests_root = resolve_path(data_cfg.get("manifest_output_dir", root / "manifests"))
+    splits_root = resolve_path(data_cfg.get("split_manifest_dir", manifests_root / "splits"))
     audio_root.mkdir(parents=True, exist_ok=True)
     manifests_root.mkdir(parents=True, exist_ok=True)
     splits_root.mkdir(parents=True, exist_ok=True)
@@ -211,6 +213,37 @@ def generate_demo_dataset(config: dict[str, Any]) -> dict[str, Path]:
     trial_frame = pd.DataFrame(trial_rows)
     save_manifest(trial_frame, manifests_root / "trials.csv")
     save_split_manifests(trial_frame, splits_root, "trials")
+    leakage = assert_no_trial_leakage(trial_frame)
+    speaker_report = speaker_split_report(utterance_frame)
+    summary = {
+        "dataset_mode": "demo",
+        "dataset_name": str(data_cfg.get("dataset_name", "alpha_demo")),
+        "dataset_root": str(root),
+        "manifest_output_dir": str(manifests_root),
+        "split_strategy": "speaker_disjoint",
+        "used_existing_splits": False,
+        "require_speaker_disjoint": True,
+        "enrollment_count": int(data_cfg["enrollment_count"]),
+        "num_utterances": int(len(utterance_frame)),
+        "num_trials": int(len(trial_frame)),
+        "num_speakers": int(utterance_frame["speaker_id"].nunique()),
+        "speakers_per_split": {
+            split: int(part["speaker_id"].nunique())
+            for split, part in utterance_frame.groupby("split")
+        },
+        "trials_per_split": {
+            split: int(len(part))
+            for split, part in trial_frame.groupby("split")
+        },
+        "trial_labels": {
+            label: int(count)
+            for label, count in trial_frame["label"].value_counts().sort_index().items()
+        },
+        "speaker_disjoint_violations": int(speaker_report["violates_speaker_disjoint"].sum()),
+    }
+    save_frame(leakage, manifests_root / "leakage_report.csv")
+    save_frame(speaker_report, manifests_root / "speaker_split_report.csv")
+    save_json(summary, manifests_root / "dataset_summary.json")
 
     assumptions = {
         "description": "Synthetic corpus for smoke tests only. Voices are harmonic toy signals rather than natural speech.",
@@ -227,4 +260,7 @@ def generate_demo_dataset(config: dict[str, Any]) -> dict[str, Path]:
         "utterance_manifest": manifests_root / "utterances.csv",
         "trial_manifest": manifests_root / "trials.csv",
         "split_manifest_dir": splits_root,
+        "leakage_report": leakage,
+        "speaker_split_report": speaker_report,
+        "dataset_summary": summary,
     }

@@ -3,6 +3,8 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+.venv-mps/
+.venv-mps310/
 .matplotlib/
 __pycache__/
 *.egg-info/
@@ -12,3 +14,4 @@ outputs/tables/
 outputs/reports/
 outputs/notebooks_exports/
 demo_data/
+external_data/

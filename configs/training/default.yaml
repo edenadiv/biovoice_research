@@ -1,5 +1,5 @@
 training:
-  device: cpu
+device: auto
   batch_size: 8
   epochs: 4
   learning_rate: 0.001
