@@ -69,6 +69,11 @@ def test_reports_include_supervisor_sections() -> None:
         ["Synthetic-only evidence."],
         alpha_checklist={"Mandatory plots were generated": True},
         interpretation_notes={"joint": "Use this as the headline metric."},
+        baseline_comparison=["Majority baseline accuracy: 0.8."],
+        threshold_selection=["Objective: macro_f1."],
+        classwise_results=["spoof recall: 0.9."],
+        decision_path_summary=["The spoof gate fired on 0.7 of trials."],
+        error_summary=["wrong_speaker -> target_bona_fide: 5."],
     )
     supervisor_report = build_supervisor_report(
         {
@@ -77,6 +82,11 @@ def test_reports_include_supervisor_sections() -> None:
             "metrics": ["Accuracy: 0.5"],
             "dataset_review": ["Dataset mode: real_private_corpus"],
             "metric_interpretation": ["Interpret carefully."],
+            "baseline_comparison": ["Majority baseline accuracy: 0.8."],
+            "threshold_selection": ["Objective: macro_f1."],
+            "classwise_results": ["spoof recall: 0.9."],
+            "decision_path_summary": ["The spoof gate fired on 0.7 of trials."],
+            "error_summary": ["wrong_speaker -> target_bona_fide: 5."],
             "real_data_interpretation": ["Measured evidence for this protocol only."],
             "figures": ["plots/confusion_matrix.png"],
             "artifact_map": ["reports/artifact_index.md"],
@@ -86,7 +96,13 @@ def test_reports_include_supervisor_sections() -> None:
     )
     assert "Alpha Exit Checklist" in run_report
     assert "Interpretation Notes" in run_report
+    assert "Baseline Comparison" in run_report
+    assert "Threshold Selection" in run_report
     assert "How To Read This Report" in supervisor_report
     assert "Dataset Review" in supervisor_report
+    assert "Baseline Comparison" in supervisor_report
+    assert "Classwise Results" in supervisor_report
+    assert "Decision Path Summary" in run_report
+    assert "Decision Path Summary" in supervisor_report
     assert "How To Interpret This Real-Data Baseline" in supervisor_report
     assert "Artifact Map" in supervisor_report

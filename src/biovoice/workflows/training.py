@@ -7,19 +7,15 @@ from pathlib import Path
 import pandas as pd
 
 from biovoice.data.manifests import load_manifest
-from biovoice.evaluation.metrics import classification_metrics
-from biovoice.evaluation.spoof_metrics import spoof_metric_bundle
-from biovoice.evaluation.sv_metrics import target_non_target_summary
 from biovoice.training.seed import set_global_seed
 from biovoice.training.train_cm import train_spoof_baseline
-from biovoice.training.train_joint import apply_rule_fusion
 from biovoice.training.train_sv import train_speaker_baseline
 from biovoice.utils.path_utils import resolve_path
 from biovoice.viz.training_plots import plot_loss_curves
 
 from .common import load_workflow_config, merge_dataset_review, setup_run
 from .data_prep import prepare_data_workflow
-from .evaluation import plot_mandatory_evaluation_figures, save_mode_comparison
+from .evaluation import evaluate_joint_predictions, prepare_threshold_selection
 from .inference import build_trial_predictions
 from .reporting import write_joint_run_outputs
 
@@ -57,33 +53,52 @@ def run_joint_workflow(config_path: str | Path) -> Path:
     sv_result = train_speaker_baseline(config, run_paths.root)
     spoof_result = train_spoof_baseline(config, run_paths.root)
 
+    validation_predictions = build_trial_predictions(
+        config,
+        run_paths,
+        Path(sv_result["checkpoint_path"]),
+        Path(spoof_result["checkpoint_path"]),
+        split=config["data"]["validation_split"],
+        logger=logger,
+    )
+    if validation_predictions.empty:
+        logger.warning(
+            "Validation trial split '%s' is empty; falling back to test predictions for threshold tuning. "
+            "This is acceptable for tiny smoke/demo runs but should not be used for real-data claims.",
+            config["data"]["validation_split"],
+        )
+        validation_predictions = build_trial_predictions(
+            config,
+            run_paths,
+            Path(sv_result["checkpoint_path"]),
+            Path(spoof_result["checkpoint_path"]),
+            split=config["data"]["test_split"],
+            logger=logger,
+        )
+    threshold_sweep, selected_thresholds = prepare_threshold_selection(config, validation_predictions)
+    use_tuned_thresholds = bool(config["evaluation"].get("use_tuned_thresholds", True))
+    active_sv_threshold = float(selected_thresholds["sv_threshold"] if use_tuned_thresholds else config["evaluation"]["sv_threshold"])
+    active_spoof_threshold = float(selected_thresholds["spoof_threshold"] if use_tuned_thresholds else config["evaluation"]["spoof_threshold"])
     predictions = build_trial_predictions(
         config,
         run_paths,
         Path(sv_result["checkpoint_path"]),
         Path(spoof_result["checkpoint_path"]),
         split=config["data"]["test_split"],
+        sv_threshold=active_sv_threshold,
+        spoof_threshold=active_spoof_threshold,
         logger=logger,
     )
-    predictions = apply_rule_fusion(predictions)
-    from biovoice.utils.serialization import save_frame
-
-    save_frame(predictions, run_paths.root / "predictions.csv")
-
-    sv_binary_predictions = (predictions["sv_score"] >= float(config["evaluation"]["sv_threshold"])).astype(int)
-    spoof_binary_predictions = (predictions["spoof_probability"] >= float(config["evaluation"]["spoof_threshold"])).astype(int)
-    final_valid = predictions["final_decision"] != "manual_review"
-    final_true = predictions.loc[final_valid, "label"].map({"wrong_speaker": 0, "spoof": 1, "target_bona_fide": 2}).to_numpy()
-    final_pred = predictions.loc[final_valid, "final_decision"].map({"wrong_speaker": 0, "spoof": 1, "target_bona_fide": 2}).to_numpy()
-
-    metrics = {
-        "sv": {**classification_metrics(predictions["speaker_match_label"], sv_binary_predictions, probabilities=predictions["sv_score"]), **target_non_target_summary(predictions["sv_score"].to_numpy(), predictions["speaker_match_label"].to_numpy())},
-        "spoof": spoof_metric_bundle(predictions["spoof_label"].to_numpy(), predictions["spoof_probability"].to_numpy(), spoof_binary_predictions.to_numpy()),
-        "joint": classification_metrics(final_true, final_pred) if len(final_true) else {"accuracy": 0.0},
-    }
-    calibration = plot_mandatory_evaluation_figures(config, run_paths, predictions, sv_result["history"], spoof_result["history"])
-    metrics["calibration"] = {"brier_score": calibration["brier_score"], "ece": calibration["ece"]}
-    comparison = save_mode_comparison(predictions, run_paths, config)
+    predictions, metrics, comparison, analysis = evaluate_joint_predictions(
+        config,
+        run_paths,
+        predictions,
+        validation_predictions=validation_predictions,
+        threshold_sweep=threshold_sweep,
+        selected_thresholds=selected_thresholds,
+        sv_history=sv_result["history"],
+        spoof_history=spoof_result["history"],
+    )
 
     quality_summary_path = resolve_path(config["data"]["manifest_output_dir"]) / "quality_summary.csv"
     quality_frame = pd.read_csv(quality_summary_path) if quality_summary_path.exists() else None
@@ -94,7 +109,7 @@ def run_joint_workflow(config_path: str | Path) -> Path:
         quality_frame=quality_frame,
     )
 
-    write_joint_run_outputs(run_paths, metrics, predictions, comparison, dataset_review)
+    write_joint_run_outputs(run_paths, metrics, predictions, comparison, dataset_review, analysis=analysis)
     logger.info("Joint fusion workflow complete.")
     return run_paths.root
 

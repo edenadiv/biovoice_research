@@ -1,6 +1,6 @@
 | filename | what_it_shows | why_it_matters | interpretation_note |
 | --- | --- | --- | --- |
-| ablation_summary.png | Compact comparison of the four alpha experiment modes. | Shows whether fusion and interpretable features help relative to single-branch baselines. | Treat differences cautiously even on real data; use them to inspect baseline behavior, not to overclaim superiority. |
+| ablation_summary.png | Grouped comparison of majority, single-branch, and fusion decision baselines. | Makes it obvious when fusion accuracy looks acceptable only because the dataset is spoof-dominated. | Macro F1 and balanced accuracy should drive interpretation here more than raw accuracy. |
 | class_balance.png | Distribution of evaluation trials across the final decision classes. | Helps reviewers see whether later metrics may be biased by class imbalance. | Large imbalance means accuracy alone may be misleading. |
 | confusion_matrix.png | Count confusion matrix for the final three-way decision. | Directly exposes which error type dominates in the fused system. | Large off-diagonal counts show the practical failure mode. |
 | duration_histogram.png | Distribution of probe durations after preprocessing. | Short clips often weaken both speaker verification and spoof detection. | A narrow range means duration effects are limited; a wide range motivates robustness checks. |
@@ -12,6 +12,7 @@
 | spoof_det.png | DET curve for spoof detection. | Shows the balance between missing spoofs and over-flagging bona fide speech. | Useful for understanding threshold sensitivity beyond ROC-AUC. |
 | spoof_loss_curves.png | Train and validation loss for the spoof baseline. | Shows whether the anti-spoof branch learned anything stable on the available data. | Flat curves can indicate an underpowered model or an uninformative dataset. |
 | spoof_pr.png | Precision-recall curve for the spoof branch. | Shows how positive spoof findings degrade as recall increases. | Useful when the number of spoofs differs from bona fide trials. |
+| spoof_probability_by_true_label.png | Spoof-probability distribution broken out by the true three-way label. | Shows whether the spoof branch compresses most trials into the same part of score space. | If bona fide and spoof boxes overlap heavily, the spoof branch is a likely bottleneck. |
 | spoof_roc.png | ROC curve for bona fide vs spoof classification. | Shows how well spoof scores rank true spoofs above bona fide speech. | Better curves move toward the upper-left corner. |
 | spoof_score_over_time.png | Segment-level spoof probability timeline. | Shows whether suspiciousness is concentrated in specific temporal regions. | Sharp peaks may suggest localized artifacts rather than global corruption. |
 | spoof_vs_bonafide_scores.png | Histogram of spoof probabilities for bona fide and spoof probes. | Shows how much the spoof detector separates its two classes. | Overlap indicates limited spoof-only reliability. |
@@ -19,6 +20,7 @@
 | sv_loss_curves.png | Train and validation loss for the speaker verification baseline. | Confirms the baseline actually trained and whether it overfit quickly. | Diverging train/validation curves suggest overfitting or protocol mismatch. |
 | sv_pr.png | Precision-recall curve for the SV branch. | Complements ROC when positive and negative classes are uneven. | Higher precision at useful recall values is better. |
 | sv_roc.png | ROC curve for target vs non-target verification. | Summarizes ranking quality across SV thresholds. | Curves near the diagonal indicate poor separation between target and non-target trials. |
+| sv_score_by_true_label.png | SV score distribution broken out by the true three-way label. | Shows whether target and wrong-speaker trials really separate under the current biometric branch. | Large overlap between `target_bona_fide` and `wrong_speaker` suggests the SV branch still needs help. |
 | target_vs_non_target_scores.png | Histogram of SV scores for target and non-target trials. | Shows whether a single threshold can reasonably separate the two groups. | Heavy overlap means the SV branch alone is not enough. |
-| threshold_sweep_heatmap.png | Decision accuracy over a grid of SV and spoof thresholds. | Shows whether the system is robust to reasonable threshold movement. | Large flat high-value regions indicate a more stable operating point. |
+| threshold_sweep_heatmap.png | Validation-set objective over a grid of SV and spoof thresholds. | Shows whether the chosen operating point is stable when thresholds move. | Large flat high-value regions indicate a more defensible threshold choice than a sharp isolated peak. |
 | waveform_with_suspicious_segments.png | Probe waveform with highlighted suspicious regions. | Gives a direct visual anchor for segment-level explainability. | Highlighted spans should be read alongside the spoof and similarity timelines. |

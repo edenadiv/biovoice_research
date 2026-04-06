@@ -467,6 +467,174 @@ def _build_2021_trial_manifest(
     return trial_frame
 
 
+def _build_within_split_trial_manifest(
+    split_utterances: pd.DataFrame,
+    *,
+    split_name: str,
+    enrollment_count: int,
+    seed: int,
+    probe_limit: int | None = None,
+) -> pd.DataFrame:
+    """Construct validation trials from one bona-fide/spoof split.
+
+    This is used for threshold tuning on ASVspoof 2019 LA dev. It mirrors the
+    real evaluation structure in a conservative way:
+
+    - target trials are bona fide probes from the claimed speaker
+    - spoof trials are spoof probes under the claimed speaker
+    - wrong-speaker trials reuse bona fide probes under a seed-stable wrong claim
+    """
+    catalog = _build_enrollment_catalog(split_utterances, seed=seed)
+    bona = split_utterances[split_utterances["spoof_label"] == 0].copy()
+    spoof = split_utterances[split_utterances["spoof_label"] == 1].copy()
+    rows: list[dict[str, Any]] = []
+    trial_counter = 0
+    bona_targets: list[dict[str, Any]] = []
+    speaker_ids = sorted(bona["speaker_id"].astype(str).unique())
+    for speaker_id in speaker_ids:
+        speaker_bona = bona[bona["speaker_id"] == speaker_id].copy()
+        speaker_spoof = spoof[spoof["speaker_id"] == speaker_id].copy()
+        ranked_bona = speaker_bona.assign(
+            _selection_rank=speaker_bona.apply(
+                lambda row: _stable_rank(
+                    "asvspoof-target-probe",
+                    split_name,
+                    speaker_id,
+                    row["source_recording_id"],
+                    row["utterance_id"],
+                    seed=seed,
+                ),
+                axis=1,
+            )
+        ).sort_values(["_selection_rank", "source_recording_id", "utterance_id"])
+        ranked_spoof = speaker_spoof.assign(
+            _selection_rank=speaker_spoof.apply(
+                lambda row: _stable_rank(
+                    "asvspoof-spoof-probe",
+                    split_name,
+                    speaker_id,
+                    row["source_recording_id"],
+                    row["utterance_id"],
+                    seed=seed,
+                ),
+                axis=1,
+            )
+        ).sort_values(["_selection_rank", "source_recording_id", "utterance_id"])
+        if probe_limit is not None:
+            ranked_bona = ranked_bona.head(probe_limit)
+            ranked_spoof = ranked_spoof.head(probe_limit)
+
+        for _, probe in ranked_bona.iterrows():
+            probe_source = str(probe["source_recording_id"])
+            enrollment = _select_enrollment_for_probe(
+                catalog,
+                speaker_id,
+                enrollment_count,
+                seed=seed,
+                blocked_sources={probe_source},
+            )
+            enrollment_paths = [item["path"] for item in enrollment]
+            enrollment_sources = [item["source_recording_id"] for item in enrollment]
+            rows.append(
+                {
+                    "trial_id": f"{split_name}_trial_{trial_counter:07d}",
+                    "speaker_id": speaker_id,
+                    "claim_id": speaker_id,
+                    "probe_path": str(probe["path"]),
+                    "enrollment_paths": enrollment_paths,
+                    "label": "target_bona_fide",
+                    "split": split_name,
+                    "speaker_match_label": 1,
+                    "spoof_label": 0,
+                    "probe_source_recording_id": probe_source,
+                    "enrollment_source_recording_ids": "|".join(enrollment_sources),
+                }
+            )
+            bona_targets.append(
+                {
+                    "speaker_id": speaker_id,
+                    "probe_path": str(probe["path"]),
+                    "probe_source": probe_source,
+                    "utterance_id": str(probe["utterance_id"]),
+                }
+            )
+            trial_counter += 1
+
+        for _, probe in ranked_spoof.iterrows():
+            probe_source = str(probe["source_recording_id"])
+            enrollment = _select_enrollment_for_probe(
+                catalog,
+                speaker_id,
+                enrollment_count,
+                seed=seed,
+                blocked_sources={probe_source},
+            )
+            enrollment_paths = [item["path"] for item in enrollment]
+            enrollment_sources = [item["source_recording_id"] for item in enrollment]
+            rows.append(
+                {
+                    "trial_id": f"{split_name}_trial_{trial_counter:07d}",
+                    "speaker_id": speaker_id,
+                    "claim_id": speaker_id,
+                    "probe_path": str(probe["path"]),
+                    "enrollment_paths": enrollment_paths,
+                    "label": "spoof",
+                    "split": split_name,
+                    "speaker_match_label": 1,
+                    "spoof_label": 1,
+                    "probe_source_recording_id": probe_source,
+                    "enrollment_source_recording_ids": "|".join(enrollment_sources),
+                }
+            )
+            trial_counter += 1
+
+    if len(speaker_ids) < 2:
+        raise ValueError("Need at least two speakers to build ASVspoof wrong-speaker validation trials.")
+    for target in bona_targets:
+        other_candidates = [candidate for candidate in speaker_ids if candidate != target["speaker_id"]]
+        wrong_claim = sorted(
+            other_candidates,
+            key=lambda candidate: _stable_rank(
+                "asvspoof-val-wrong-claim",
+                split_name,
+                target["speaker_id"],
+                target["utterance_id"],
+                candidate,
+                seed=seed,
+            ),
+        )[0]
+        wrong_enrollment = _select_enrollment_for_probe(
+            catalog,
+            wrong_claim,
+            enrollment_count,
+            seed=seed,
+            blocked_sources={target["probe_source"]},
+        )
+        rows.append(
+            {
+                "trial_id": f"{split_name}_trial_{trial_counter:07d}",
+                "speaker_id": wrong_claim,
+                "claim_id": wrong_claim,
+                "probe_path": target["probe_path"],
+                "enrollment_paths": [item["path"] for item in wrong_enrollment],
+                "label": "wrong_speaker",
+                "split": split_name,
+                "speaker_match_label": 0,
+                "spoof_label": 0,
+                "probe_source_recording_id": target["probe_source"],
+                "enrollment_source_recording_ids": "|".join(
+                    item["source_recording_id"] for item in wrong_enrollment
+                ),
+            }
+        )
+        trial_counter += 1
+
+    trial_frame = pd.DataFrame(rows)
+    validate_trial_manifest(trial_frame)
+    assert_no_trial_leakage(trial_frame)
+    return trial_frame
+
+
 def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
     """Stage ASVspoof 2019/2021 LA into canonical BioVoice manifests."""
     data_cfg = config["data"]
@@ -525,7 +693,14 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
             "ASVspoof 2019 eval does not provide enough unique-source bona fide "
             f"enrollment candidates for speakers: {insufficient}"
         )
-    trials = _build_2021_trial_manifest(
+    validation_trials = _build_within_split_trial_manifest(
+        utter_dev,
+        split_name=str(data_cfg.get("validation_split", "val")),
+        enrollment_count=enrollment_count,
+        seed=selection_seed,
+        probe_limit=None if data_cfg.get("probe_trials_per_speaker") in {None, "", 0} else int(data_cfg["probe_trials_per_speaker"]),
+    )
+    test_trials = _build_2021_trial_manifest(
         metadata_2021,
         mapping_2021,
         eval_audio_dir_2021 / "flac",
@@ -534,6 +709,7 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
         seed=selection_seed,
         test_split_name=str(data_cfg.get("test_split", "test")),
     )
+    trials = pd.concat([validation_trials, test_trials], ignore_index=True)
 
     utterance_manifest = resolve_path(data_cfg["utterance_manifest_path"])
     trial_manifest = resolve_path(data_cfg["trial_manifest_path"])
@@ -547,9 +723,9 @@ def stage_asvspoof2021_la_dataset(config: dict[str, Any]) -> dict[str, Any]:
     dataset_summary = {
         "dataset_mode": "asvspoof2021_la",
         "dataset_name": str(data_cfg.get("dataset_name", "ASVspoof2021_LA")),
-        "protocol_note": "Train/dev audio comes from ASVspoof 2019 LA. Enrollment pools come from ASVspoof 2019 LA eval bona fide. Probes come from ASVspoof 2021 LA eval.",
+        "protocol_note": "Train audio comes from ASVspoof 2019 LA train. Threshold-tuning validation trials come from ASVspoof 2019 LA dev. Enrollment pools come from ASVspoof 2019 LA eval bona fide. Test probes come from ASVspoof 2021 LA eval.",
         "train_split_note": "ASVspoof 2019 LA train",
-        "validation_split_note": "ASVspoof 2019 LA dev",
+        "validation_split_note": "ASVspoof 2019 LA dev trials for threshold tuning",
         "enrollment_pool_note": "ASVspoof 2019 LA eval bona fide",
         "test_split_note": "ASVspoof 2021 LA eval",
         "num_utterances": int(len(utterances)),

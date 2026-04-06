@@ -15,16 +15,10 @@ import pandas as pd
 import typer
 
 from biovoice.data.manifests import load_manifest
-from biovoice.evaluation.metrics import classification_metrics
-from biovoice.evaluation.spoof_metrics import spoof_metric_bundle
-from biovoice.evaluation.sv_metrics import target_non_target_summary
-from biovoice.training.train_joint import apply_rule_fusion
-from biovoice.utils.config_utils import load_config
 from biovoice.utils.logging_utils import configure_logging
 from biovoice.utils.path_utils import RunPaths, resolve_path
-from biovoice.utils.serialization import save_frame
-from biovoice.workflows.common import merge_dataset_review
-from biovoice.workflows.evaluation import plot_mandatory_evaluation_figures, save_mode_comparison
+from biovoice.workflows.common import load_workflow_config, merge_dataset_review
+from biovoice.workflows.evaluation import evaluate_joint_predictions, prepare_threshold_selection
 from biovoice.workflows.inference import build_trial_predictions
 from biovoice.workflows.reporting import write_joint_run_outputs
 
@@ -51,9 +45,10 @@ def _run_paths_from_root(run_root: Path) -> RunPaths:
 def main(
     config: str = "configs/default.yaml",
     run_dir: str = "outputs/runs",
+    reuse_saved_test_predictions: bool = True,
 ) -> None:
     """Resume a partial joint run using its saved checkpoints and histories."""
-    config_dict = load_config(config)
+    config_dict = load_workflow_config(config)
     run_root = resolve_path(run_dir)
     run_paths = _run_paths_from_root(run_root)
     logger = configure_logging(run_paths.logs / "run.log")
@@ -71,64 +66,57 @@ def main(
     with open(run_paths.reports / "spoof_history.json", "r", encoding="utf-8") as handle:
         spoof_history = json.load(handle)
 
-    predictions = build_trial_predictions(
+    validation_predictions = build_trial_predictions(
         config_dict,
         run_paths,
         sv_checkpoint,
         spoof_checkpoint,
-        split=config_dict["data"]["test_split"],
+        split=config_dict["data"]["validation_split"],
         logger=logger,
     )
-    predictions = apply_rule_fusion(predictions)
-    save_frame(predictions, run_paths.root / "predictions.csv")
-
-    sv_binary_predictions = (
-        predictions["sv_score"] >= float(config_dict["evaluation"]["sv_threshold"])
-    ).astype(int)
-    spoof_binary_predictions = (
-        predictions["spoof_probability"] >= float(config_dict["evaluation"]["spoof_threshold"])
-    ).astype(int)
-    final_valid = predictions["final_decision"] != "manual_review"
-    final_true = predictions.loc[final_valid, "label"].map(
-        {"wrong_speaker": 0, "spoof": 1, "target_bona_fide": 2}
-    ).to_numpy()
-    final_pred = predictions.loc[final_valid, "final_decision"].map(
-        {"wrong_speaker": 0, "spoof": 1, "target_bona_fide": 2}
-    ).to_numpy()
-
-    metrics = {
-        "sv": {
-            **classification_metrics(
-                predictions["speaker_match_label"],
-                sv_binary_predictions,
-                probabilities=predictions["sv_score"],
-            ),
-            **target_non_target_summary(
-                predictions["sv_score"].to_numpy(),
-                predictions["speaker_match_label"].to_numpy(),
-            ),
-        },
-        "spoof": spoof_metric_bundle(
-            predictions["spoof_label"].to_numpy(),
-            predictions["spoof_probability"].to_numpy(),
-            spoof_binary_predictions.to_numpy(),
-        ),
-        "joint": classification_metrics(final_true, final_pred)
-        if len(final_true)
-        else {"accuracy": 0.0},
-    }
-    calibration = plot_mandatory_evaluation_figures(
+    if validation_predictions.empty:
+        logger.warning(
+            "Validation trial split '%s' is empty; falling back to test predictions for threshold tuning. "
+            "This fallback is for smoke/demo recovery only, not for real-data claims.",
+            config_dict["data"]["validation_split"],
+        )
+        validation_predictions = build_trial_predictions(
+            config_dict,
+            run_paths,
+            sv_checkpoint,
+            spoof_checkpoint,
+            split=config_dict["data"]["test_split"],
+            logger=logger,
+        )
+    threshold_sweep, selected_thresholds = prepare_threshold_selection(config_dict, validation_predictions)
+    use_tuned_thresholds = bool(config_dict["evaluation"].get("use_tuned_thresholds", True))
+    active_sv_threshold = float(selected_thresholds["sv_threshold"] if use_tuned_thresholds else config_dict["evaluation"]["sv_threshold"])
+    active_spoof_threshold = float(selected_thresholds["spoof_threshold"] if use_tuned_thresholds else config_dict["evaluation"]["spoof_threshold"])
+    saved_predictions_path = run_paths.root / "predictions.csv"
+    if reuse_saved_test_predictions and saved_predictions_path.exists():
+        predictions = pd.read_csv(saved_predictions_path)
+        logger.info("Reused saved test predictions from %s", saved_predictions_path)
+    else:
+        predictions = build_trial_predictions(
+            config_dict,
+            run_paths,
+            sv_checkpoint,
+            spoof_checkpoint,
+            split=config_dict["data"]["test_split"],
+            sv_threshold=active_sv_threshold,
+            spoof_threshold=active_spoof_threshold,
+            logger=logger,
+        )
+    predictions, metrics, comparison, analysis = evaluate_joint_predictions(
         config_dict,
         run_paths,
         predictions,
-        sv_history,
-        spoof_history,
+        validation_predictions=validation_predictions,
+        threshold_sweep=threshold_sweep,
+        selected_thresholds=selected_thresholds,
+        sv_history=sv_history,
+        spoof_history=spoof_history,
     )
-    metrics["calibration"] = {
-        "brier_score": calibration["brier_score"],
-        "ece": calibration["ece"],
-    }
-    comparison = save_mode_comparison(predictions, run_paths, config_dict)
 
     quality_summary_path = resolve_path(config_dict["data"]["manifest_output_dir"]) / "quality_summary.csv"
     quality_frame = pd.read_csv(quality_summary_path) if quality_summary_path.exists() else None
@@ -139,7 +127,7 @@ def main(
         quality_frame=quality_frame,
     )
 
-    write_joint_run_outputs(run_paths, metrics, predictions, comparison, dataset_review)
+    write_joint_run_outputs(run_paths, metrics, predictions, comparison, dataset_review, analysis=analysis)
     logger.info("Completed resumed scoring and reporting for %s", run_root)
     typer.echo(str(run_root))
 

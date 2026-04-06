@@ -34,9 +34,9 @@ ALPHA_LIMITATIONS = [
 
 METRIC_INTERPRETATION_NOTES = {
     "sv": "Treat SV metrics as biometric-consistency evidence only. Strong spoofers can still fool this branch.",
-    "spoof": "Treat spoof metrics as artifact-detection evidence only. Bona fide wrong speakers can still appear non-spoofed.",
-    "joint": "Joint metrics matter most for the research question because they reflect the final three-way decision.",
-    "calibration": "Calibration metrics matter when thresholds and probabilities are used in reports or manual review rules.",
+    "spoof": "Treat spoof metrics as artifact-detection evidence only. Weak spoof separation will usually bottleneck the final three-way decision.",
+    "joint": "For the imbalanced three-way task, macro F1 and balanced accuracy are more honest than raw accuracy alone.",
+    "calibration": "Calibration and threshold-selection artifacts matter because the final decision is thresholded, not purely ranking-based.",
 }
 
 
@@ -63,7 +63,22 @@ def load_workflow_config(config_path: str | Path) -> dict[str, Any]:
     data_cfg.setdefault("require_speaker_disjoint", bool(data_cfg.get("speaker_disjoint", True)))
     data_cfg.setdefault("quality_scan_mode", "full")
     data_cfg.setdefault("quality_progress_every", 500)
-    config.setdefault("training", {}).setdefault("device", "auto")
+    training_cfg = config.setdefault("training", {})
+    training_cfg.setdefault("device", "auto")
+    spoof_loss_cfg = training_cfg.setdefault("spoof_loss", {})
+    spoof_loss_cfg.setdefault("name", "bce")
+    spoof_loss_cfg.setdefault("auto_pos_weight", False)
+    spoof_loss_cfg.setdefault("focal_gamma", 2.0)
+    training_cfg.setdefault("spoof_monitor", "val_metric")
+    training_cfg.setdefault("spoof_monitor_mode", "max")
+    training_cfg.setdefault("spoof_restore_best_state", True)
+    evaluation_cfg = config.setdefault("evaluation", {})
+    evaluation_cfg.setdefault("sv_threshold_min", 0.2)
+    evaluation_cfg.setdefault("sv_threshold_max", 0.9)
+    evaluation_cfg.setdefault("spoof_threshold_min", 0.2)
+    evaluation_cfg.setdefault("spoof_threshold_max", 0.9)
+    evaluation_cfg.setdefault("threshold_objective", "macro_f1")
+    evaluation_cfg.setdefault("use_tuned_thresholds", True)
     return config
 
 
@@ -221,6 +236,16 @@ def dataset_review_summary(
         },
         "speaker_disjoint_violations": int(split_report["violates_speaker_disjoint"].sum()),
         "trial_leakage_violations": int(leak_report["has_leakage"].sum()),
+    }
+    test_split = str(data_cfg.get("test_split", "test"))
+    validation_split = str(data_cfg.get("validation_split", "val"))
+    summary["test_trial_labels"] = {
+        label: int(count)
+        for label, count in trials.loc[trials["split"] == test_split, "label"].value_counts().sort_index().items()
+    }
+    summary["validation_trial_labels"] = {
+        label: int(count)
+        for label, count in trials.loc[trials["split"] == validation_split, "label"].value_counts().sort_index().items()
     }
     summary["speaker_disjoint_status"] = "pass" if summary["speaker_disjoint_violations"] == 0 else "fail"
     summary["trial_leakage_status"] = "pass" if summary["trial_leakage_violations"] == 0 else "fail"

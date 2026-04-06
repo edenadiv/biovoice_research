@@ -13,6 +13,11 @@ def build_run_report(
     limitations: list[str],
     alpha_checklist: dict[str, bool] | None = None,
     interpretation_notes: dict[str, str] | None = None,
+    baseline_comparison: list[str] | None = None,
+    threshold_selection: list[str] | None = None,
+    classwise_results: list[str] | None = None,
+    decision_path_summary: list[str] | None = None,
+    error_summary: list[str] | None = None,
 ) -> str:
     """Render a readable run report for researchers and supervisors."""
     lines = [
@@ -42,6 +47,31 @@ def build_run_report(
         lines.append("## Interpretation Notes")
         for key, note in interpretation_notes.items():
             lines.append(f"- {key}: {note}")
+        lines.append("")
+    if baseline_comparison:
+        lines.append("## Baseline Comparison")
+        for item in baseline_comparison:
+            lines.append(f"- {item}")
+        lines.append("")
+    if threshold_selection:
+        lines.append("## Threshold Selection")
+        for item in threshold_selection:
+            lines.append(f"- {item}")
+        lines.append("")
+    if classwise_results:
+        lines.append("## Classwise Results")
+        for item in classwise_results:
+            lines.append(f"- {item}")
+        lines.append("")
+    if decision_path_summary:
+        lines.append("## Decision Path Summary")
+        for item in decision_path_summary:
+            lines.append(f"- {item}")
+        lines.append("")
+    if error_summary:
+        lines.append("## Error Summary")
+        for item in error_summary:
+            lines.append(f"- {item}")
         lines.append("")
     lines.append("## Artifacts")
     for item in artifact_index:

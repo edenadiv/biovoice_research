@@ -1,0 +1,7 @@
+true_label,predicted_label,count,rate_within_true_label
+spoof,target_bona_fide,20172,0.15125974805038991
+spoof,wrong_speaker,9498,0.07122075584883024
+wrong_speaker,spoof,8284,0.5591252699784017
+target_bona_fide,spoof,8284,0.5591252699784017
+wrong_speaker,target_bona_fide,2136,0.14416846652267817
+target_bona_fide,wrong_speaker,1928,0.13012958963282936

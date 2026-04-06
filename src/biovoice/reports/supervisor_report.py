@@ -41,6 +41,26 @@ def build_supervisor_report(summary: dict[str, Any]) -> str:
         lines.extend(["", "## Metric Interpretation"])
         for item in summary["metric_interpretation"]:
             lines.append(f"- {item}")
+    if "baseline_comparison" in summary:
+        lines.extend(["", "## Baseline Comparison"])
+        for item in summary["baseline_comparison"]:
+            lines.append(f"- {item}")
+    if "threshold_selection" in summary:
+        lines.extend(["", "## Threshold Selection"])
+        for item in summary["threshold_selection"]:
+            lines.append(f"- {item}")
+    if "classwise_results" in summary:
+        lines.extend(["", "## Classwise Results"])
+        for item in summary["classwise_results"]:
+            lines.append(f"- {item}")
+    if "decision_path_summary" in summary:
+        lines.extend(["", "## Decision Path Summary"])
+        for item in summary["decision_path_summary"]:
+            lines.append(f"- {item}")
+    if "error_summary" in summary:
+        lines.extend(["", "## Error Summary"])
+        for item in summary["error_summary"]:
+            lines.append(f"- {item}")
     if "real_data_interpretation" in summary:
         lines.extend(["", "## How To Interpret This Real-Data Baseline"])
         for item in summary["real_data_interpretation"]:

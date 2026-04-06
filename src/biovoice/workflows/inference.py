@@ -46,6 +46,9 @@ def build_trial_predictions(
     sv_checkpoint: Path,
     spoof_checkpoint: Path,
     split: str = "test",
+    *,
+    sv_threshold: float | None = None,
+    spoof_threshold: float | None = None,
     logger: Any | None = None,
 ) -> pd.DataFrame:
     """Run enrollment-conditioned inference and save per-trial explanation files."""
@@ -145,8 +148,8 @@ def build_trial_predictions(
         decision = final_decision(
             sv_score=sv_score,
             spoof_probability=spoof_probability,
-            sv_threshold=float(config["evaluation"]["sv_threshold"]),
-            spoof_threshold=float(config["evaluation"]["spoof_threshold"]),
+            sv_threshold=float(config["evaluation"]["sv_threshold"] if sv_threshold is None else sv_threshold),
+            spoof_threshold=float(config["evaluation"]["spoof_threshold"] if spoof_threshold is None else spoof_threshold),
             manual_review_margin=float(config["evaluation"]["manual_review_margin"]),
         )
         top_features = (

@@ -72,10 +72,23 @@ training:
   learning_rate: 0.001
   weight_decay: 0.0001
   early_stopping_patience: 2
+  spoof_monitor: val_metric
+  spoof_monitor_mode: max
+  spoof_restore_best_state: true
+  spoof_loss:
+    name: weighted_bce
+    auto_pos_weight: true
+    focal_gamma: 2.0
 
 evaluation:
   sv_threshold: 0.55
   spoof_threshold: 0.50
+  sv_threshold_min: 0.20
+  sv_threshold_max: 0.90
+  spoof_threshold_min: 0.20
+  spoof_threshold_max: 0.90
+  threshold_objective: macro_f1
+  use_tuned_thresholds: true
   manual_review_margin: 0.0
   calibration_bins: 10
   threshold_sweep_points: 11

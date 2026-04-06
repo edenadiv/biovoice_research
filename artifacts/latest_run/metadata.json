@@ -10,6 +10,11 @@
     "artifacts/latest_run/metrics.json",
     "artifacts/latest_run/dataset_review.json",
     "artifacts/latest_run/metric_summary.csv",
+    "artifacts/latest_run/baseline_comparison.csv",
+    "artifacts/latest_run/threshold_comparison.csv",
+    "artifacts/latest_run/joint_classwise_metrics.csv",
+    "artifacts/latest_run/decision_path_summary.csv",
+    "artifacts/latest_run/error_summary.csv",
     "artifacts/latest_run/predictions_head.csv",
     "artifacts/latest_run/plot_inventory.md",
     "artifacts/latest_run/README.md"
@@ -26,6 +31,8 @@
   "notes": [
     "This is a curated GitHub-tracked review bundle, not the full experiment storage.",
     "Large binaries, checkpoints, and full plot directories remain under the ignored outputs tree.",
-    "Repository-facing copies were lightly normalized to remove machine-local absolute paths."
+    "Repository-facing copies were lightly normalized to remove machine-local absolute paths.",
+    "This refreshed bundle reflects the validation-tuned threshold analysis, the explicit majority-baseline comparison, and the added SV-only/spoof-only rule baselines.",
+    "The bundle was refreshed from saved outputs and predictions from the existing source run; this metadata update does not imply a new training run."
   ]
 }

@@ -90,9 +90,9 @@ PLOT_INTERPRETATION_NOTES: dict[str, dict[str, str]] = {
         "interpretation": "Curves close to the diagonal are better calibrated.",
     },
     "threshold_sweep_heatmap.png": {
-        "what": "Decision accuracy over a grid of SV and spoof thresholds.",
-        "why": "Shows whether the system is robust to reasonable threshold movement.",
-        "interpretation": "Large flat high-value regions indicate a more stable operating point.",
+        "what": "Validation-set objective over a grid of SV and spoof thresholds.",
+        "why": "Shows whether the chosen operating point is stable when thresholds move.",
+        "interpretation": "Large flat high-value regions indicate a more defensible threshold choice than a sharp isolated peak.",
     },
     "score_scatter.png": {
         "what": "Scatter plot of SV score versus spoof probability by class.",
@@ -100,9 +100,9 @@ PLOT_INTERPRETATION_NOTES: dict[str, dict[str, str]] = {
         "interpretation": "Separation in this plane supports the case for late fusion.",
     },
     "ablation_summary.png": {
-        "what": "Compact comparison of the four alpha experiment modes.",
-        "why": "Shows whether fusion and interpretable features help relative to single-branch baselines.",
-        "interpretation": "Treat differences cautiously on demo data; use them to inspect behavior, not to claim superiority.",
+        "what": "Grouped comparison of majority, single-branch, and fusion decision baselines.",
+        "why": "Makes it obvious when fusion accuracy looks acceptable only because the dataset is spoof-dominated.",
+        "interpretation": "Macro F1 and balanced accuracy should drive interpretation here more than raw accuracy.",
     },
     "waveform_with_suspicious_segments.png": {
         "what": "Probe waveform with highlighted suspicious regions.",
@@ -123,6 +123,16 @@ PLOT_INTERPRETATION_NOTES: dict[str, dict[str, str]] = {
         "what": "Bar chart of the largest interpretable feature mismatches between enrollment and probe audio.",
         "why": "Connects the final decision to concrete acoustic cues instead of only abstract model scores.",
         "interpretation": "Large positive bars indicate stronger mismatch evidence; treat them as supporting clues, not causal proof.",
+    },
+    "sv_score_by_true_label.png": {
+        "what": "SV score distribution broken out by the true three-way label.",
+        "why": "Shows whether target and wrong-speaker trials really separate under the current biometric branch.",
+        "interpretation": "Large overlap between `target_bona_fide` and `wrong_speaker` suggests the SV branch still needs help.",
+    },
+    "spoof_probability_by_true_label.png": {
+        "what": "Spoof-probability distribution broken out by the true three-way label.",
+        "why": "Shows whether the spoof branch compresses most trials into the same part of score space.",
+        "interpretation": "If bona fide and spoof boxes overlap heavily, the spoof branch is a likely bottleneck.",
     },
 }
 

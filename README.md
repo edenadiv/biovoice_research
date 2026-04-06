@@ -132,9 +132,15 @@ The polished run layout now also includes:
 - `tables/artifact_index.csv`: full file inventory for the run
 - `reports/artifact_index.md`: supervisor-friendly artifact list
 - `tables/metric_summary.csv`: flattened metric table
+- `tables/baseline_comparison.csv`: majority-baseline and rule-baseline comparison table
+- `tables/joint_classwise_metrics.csv`: per-class precision, recall, F1, and support
+- `tables/decision_path_summary.csv`: how often the spoof gate and downstream SV paths are used
+- `tables/threshold_comparison.csv`: default-vs-tuned threshold comparison on the evaluation split
 - `reports/plot_inventory.md`: per-figure interpretation notes
 - `tables/threshold_sweep.csv`: operating-point sweep table
+- `reports/threshold_selection.json`: selected thresholds and tuning objective
 - `reports/dataset_review.json`: dataset assumptions, split protocol, and leakage summary for the run
+- spoof branch training now keeps the best checkpoint by the configured validation monitor (`val_metric` by default for skewed real-data runs)
 
 Runs live under `outputs/runs/<timestamp>_<experiment>/`.
 
@@ -145,10 +151,12 @@ Use the tracked artifact bundle when you want a quick GitHub-readable view of th
 
 ## How Supervisors Should Read A Run
 1. Open `reports/supervisor_report.md` first for the high-level verdict.
-2. Open `reports/plot_inventory.md` next so each figure is paired with an interpretation note.
-3. Review `metrics.json` and `tables/metric_summary.csv` together.
-4. Inspect `predictions.csv` and the explainability case files only after the global figures look sensible.
-5. Treat demo-data numbers as pipeline evidence and real-data numbers as alpha baseline evidence for the evaluated protocol only.
+2. Check `tables/baseline_comparison.csv` and `tables/joint_classwise_metrics.csv` before quoting any single headline number.
+3. Check `tables/decision_path_summary.csv` to see whether the spoof branch is dominating the final rule system.
+4. Open `reports/plot_inventory.md` so each figure is paired with an interpretation note.
+5. Review `metrics.json`, `tables/metric_summary.csv`, and `tables/threshold_comparison.csv` together.
+6. Inspect `predictions.csv` and the explainability case files only after the global figures look sensible.
+7. Treat demo-data numbers as pipeline evidence and real-data numbers as alpha baseline evidence for the evaluated protocol only.
 
 ## Alpha Exit Criteria
 - Repository runs end-to-end on synthetic/demo data

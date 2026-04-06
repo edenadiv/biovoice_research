@@ -1,12 +1,29 @@
 {
   "dataset_mode": "asvspoof2021_la",
   "dataset_name": "ASVspoof2021_LA",
-  "manifest_output_dir": "external_data/asvspoof/staged_manifests",
+  "protocol_note": "Train audio comes from ASVspoof 2019 LA train. Threshold-tuning validation trials come from ASVspoof 2019 LA dev. Enrollment pools come from ASVspoof 2019 LA eval bona fide. Test probes come from ASVspoof 2021 LA eval.",
+  "train_split_note": "ASVspoof 2019 LA train",
+  "validation_split_note": "ASVspoof 2019 LA dev trials for threshold tuning",
+  "enrollment_pool_note": "ASVspoof 2019 LA eval bona fide",
+  "test_split_note": "ASVspoof 2021 LA eval",
+  "num_utterances": 121461,
+  "num_trials": 190384,
+  "num_train_utterances": 25380,
+  "num_val_utterances": 24844,
+  "num_enroll_utterances": 71237,
+  "trial_labels": {
+    "spoof": 155656,
+    "target_bona_fide": 17364,
+    "wrong_speaker": 17364
+  },
+  "speaker_split_violations": 0,
+  "trial_leakage_violations": 0,
+  "enrollment_policy_summary": "Enrollment candidates are ranked with a seed-stable order over distinct source recordings rather than relying on archive file order.",
+  "wrong_speaker_policy_summary": "Wrong-speaker claims reuse bona fide probes under seed-stable alternative claims while excluding any enrollment source that overlaps the probe.",
+  "manifest_output_dir": "/Users/edenadiv/Desktop/biovoice/external_data/asvspoof/staged_manifests",
   "split_strategy": "official_protocol",
   "require_speaker_disjoint": true,
   "enrollment_count": 3,
-  "num_utterances": 121461,
-  "num_trials": 162992,
   "num_speakers": 107,
   "speakers_per_split": {
     "enroll": 67,
@@ -14,15 +31,29 @@
     "val": 20
   },
   "trials_per_split": {
-    "test": 162992
+    "test": 162992,
+    "val": 27392
   },
-  "trial_labels": {
+  "speaker_disjoint_violations": 0,
+  "test_trial_labels": {
     "spoof": 133360,
     "target_bona_fide": 14816,
     "wrong_speaker": 14816
   },
-  "speaker_disjoint_violations": 0,
-  "trial_leakage_violations": 0,
+  "validation_trial_labels": {
+    "spoof": 22296,
+    "target_bona_fide": 2548,
+    "wrong_speaker": 2548
+  },
+  "speaker_disjoint_status": "pass",
+  "trial_leakage_status": "pass",
   "mean_duration_seconds": 3.249935587863594,
-  "mean_speech_ratio": 0.4827874761670828
+  "mean_speech_ratio": 0.4827874761670828,
+  "quality_scan_mode": "header_plus_sample",
+  "quality_measurement_counts": {
+    "header_only": 117461,
+    "waveform": 4000
+  },
+  "waveform_scanned_files": 4000,
+  "header_only_files": 117461
 }

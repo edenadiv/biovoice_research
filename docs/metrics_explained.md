@@ -67,6 +67,11 @@ This document explains what the repository reports, why each metric matters, and
   Why it matters: they show whether spoofs tend to receive higher spoof scores than bona fide speech.
   Higher or lower: higher is better.
   Common pitfall: PR-AUC is sensitive to class balance and should be read with that context.
+- Validation balanced accuracy
+  What it is: the average of spoof recall and bona fide recall on the validation split during spoof training.
+  Why it matters: it is a safer monitor than raw validation loss or raw accuracy when the spoof branch sees skewed data.
+  Higher or lower: higher is better.
+  Common pitfall: balanced accuracy is still only a branch-level signal; it does not guarantee stronger final three-way fusion behavior.
 - EER
   What it is: point where spoof misses and false spoof alarms balance.
   Why it matters: convenient single-number summary for anti-spoof work.
@@ -83,17 +88,37 @@ This document explains what the repository reports, why each metric matters, and
   What it is: correctness of the fused three-way decision.
   Why it matters: this is the closest metric to the actual research question.
   Higher or lower: higher is better.
-  Common pitfall: it can still hide which of the three classes is failing.
+  Common pitfall: on a spoof-heavy dataset it can look acceptable even when a trivial always-spoof classifier is competitive or better.
 - Classwise precision and recall
   What it is: per-class error summaries for `target_bona_fide`, `spoof`, and `wrong_speaker`.
   Why it matters: helps identify whether the system mainly confuses spoof with wrong speaker, or both with target bona fide.
   Higher or lower: higher is better.
   Common pitfall: small classes can make these numbers unstable on demo data.
+- Majority-class baseline
+  What it is: a trivial baseline that predicts `spoof` for every trial.
+  Why it matters: the tracked ASVspoof alpha baseline is heavily skewed toward `spoof`, so this baseline is the minimum honest comparison for any reported joint accuracy.
+  Higher or lower: the proposed method should ideally beat it on both macro F1 and balanced accuracy, not just on accuracy.
+  Common pitfall: beating the majority baseline on accuracy alone can still hide poor classwise behavior.
+- Macro F1
+  What it is: unweighted average of the three classwise F1 values for `target_bona_fide`, `spoof`, and `wrong_speaker`.
+  Why it matters: it is a stronger headline metric than raw accuracy for the imbalanced joint task.
+  Higher or lower: higher is better.
+  Common pitfall: it can be noisy on very small datasets, but on real-data alpha baselines it is still usually more honest than accuracy.
+- Balanced accuracy
+  What it is: average recall across the three final decision classes.
+  Why it matters: it shows whether one class is being ignored even when overall accuracy looks acceptable.
+  Higher or lower: higher is better.
+  Common pitfall: balanced accuracy says nothing about precision, so it should be read with the classwise table.
 - Threshold sweep analysis
   What it is: grid evaluation over SV and spoof thresholds.
-  Why it matters: shows whether the apparent performance depends on one brittle threshold choice.
+  Why it matters: shows whether the apparent performance depends on one brittle threshold choice and supports validation-only threshold tuning.
   Higher or lower: broader stable high-value regions are better.
   Common pitfall: threshold sweeps on synthetic data should not be overgeneralized.
+- Decision-path summary
+  What it is: counts for the main final-decision routes such as the spoof gate, SV accept after spoof rejection, and SV reject after spoof rejection.
+  Why it matters: shows whether the spoof branch is dominating the joint decision space or letting too many spoofed trials pass into the SV stage.
+  Higher or lower: there is no universal better direction; interpret the path mix together with the true-spoof fraction in each path.
+  Common pitfall: a dominant spoof gate can look reassuring while still hiding poor specificity or weak class balance.
 
 ## Calibration Metrics
 - Brier score
@@ -131,5 +156,6 @@ This document explains what the repository reports, why each metric matters, and
 
 ## Alpha-Review Interpretation Rule
 - Use joint metrics first because the repository's main question is about the final enrollment-conditioned decision.
+- For the three-way task, prefer macro F1, balanced accuracy, classwise metrics, and majority-baseline comparison before quoting plain accuracy.
 - Use SV and spoof metrics second because they explain why the fused system behaves as it does.
 - Use calibration and explainability outputs as supporting evidence rather than headline evidence.

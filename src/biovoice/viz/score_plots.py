@@ -101,14 +101,21 @@ def plot_threshold_heatmap(
     frame: pd.DataFrame,
     path: str,
     title: str,
+    value_column: str = "decision_accuracy",
+    colorbar_label: str | None = None,
     dpi: int = 180,
     style: str = "seaborn-v0_8-whitegrid",
 ) -> None:
-    """Plot a threshold sweep heatmap using decision accuracy as the surface."""
+    """Plot a threshold sweep heatmap for one evaluation objective."""
     plt = prepare_figure(style)
-    pivot = frame.pivot(index="spoof_threshold", columns="sv_threshold", values="decision_accuracy")
+    pivot = frame.pivot(index="spoof_threshold", columns="sv_threshold", values=value_column)
     image = plt.imshow(pivot.values, origin="lower", aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
-    plt.colorbar(image, fraction=0.046, pad=0.04, label="Decision accuracy")
+    plt.colorbar(
+        image,
+        fraction=0.046,
+        pad=0.04,
+        label=colorbar_label or value_column.replace("_", " ").title(),
+    )
     plt.xticks(range(len(pivot.columns)), [f"{value:.2f}" for value in pivot.columns], rotation=45, ha="right")
     plt.yticks(range(len(pivot.index)), [f"{value:.2f}" for value in pivot.index])
     plt.title(title)
@@ -147,4 +154,32 @@ def plot_score_scatter(
     plt.xlabel("Speaker similarity score")
     plt.ylabel("Spoof probability")
     plt.legend()
+    save_current_figure(path, dpi=dpi)
+
+
+def plot_score_by_class(
+    frame: pd.DataFrame,
+    score_column: str,
+    path: str,
+    title: str,
+    ylabel: str,
+    *,
+    label_column: str = "label",
+    labels: list[str] | None = None,
+    dpi: int = 180,
+    style: str = "seaborn-v0_8-whitegrid",
+) -> None:
+    """Plot one score distribution broken out by the true evaluation label.
+
+    A compact boxplot is supervisor-friendly: it makes it obvious whether the
+    score ranges for the three classes meaningfully overlap without requiring a
+    more elaborate density estimator.
+    """
+    plt = prepare_figure(style)
+    ordered_labels = labels or ["target_bona_fide", "spoof", "wrong_speaker"]
+    series = [frame.loc[frame[label_column] == label, score_column].dropna().to_numpy() for label in ordered_labels]
+    plt.boxplot(series, tick_labels=ordered_labels, showfliers=False)
+    plt.title(title)
+    plt.ylabel(ylabel)
+    plt.xticks(rotation=20, ha="right")
     save_current_figure(path, dpi=dpi)
